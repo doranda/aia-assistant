@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchNews } from "@/lib/mpf/scrapers/news-collector";
 import { classifyUnclassifiedNews } from "@/lib/mpf/classification";
+import { processPendingAlerts } from "@/lib/mpf/alerts";
 
 export const maxDuration = 120;
 
@@ -62,6 +63,7 @@ export async function GET(req: NextRequest) {
       })
       .eq("id", run?.id);
 
+    await processPendingAlerts();
     return NextResponse.json({ ok: true, fetched, classified });
   } catch (error) {
     await supabase

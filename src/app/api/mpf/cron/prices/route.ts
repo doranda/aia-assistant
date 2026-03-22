@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scrapeAAStocksPrices, upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
 import { PRICE_OUTLIER_THRESHOLD_PCT } from "@/lib/mpf/constants";
+import { processPendingAlerts } from "@/lib/mpf/alerts";
 
 export const maxDuration = 60;
 
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    await processPendingAlerts();
     return NextResponse.json({ ok: true, count, outliers: outlierFunds?.length || 0 });
   } catch (error) {
     await supabase
