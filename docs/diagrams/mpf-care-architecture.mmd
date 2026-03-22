@@ -1,0 +1,88 @@
+flowchart TB
+    subgraph CRON["Vercel Cron Triggers"]
+        C1["Daily 7pm HKT<br/>Fund Prices"]
+        C2["Every 6hrs<br/>News Collector"]
+        C3["Weekly Sunday<br/>MPFA Official"]
+        C4["One-time<br/>5yr Backfill"]
+    end
+
+    subgraph SOURCES["Data Sources"]
+        S1["AAStocks<br/>MPF Pages"]
+        S2["SCMP / Reuters<br/>Bloomberg / MPFA Blog"]
+        S3["MPFA Fund Platform<br/>data.gov.hk"]
+        S4["Admin Upload<br/>CSV / Excel"]
+    end
+
+    subgraph SCRAPERS["Serverless Functions"]
+        F1["Price Scraper<br/>Cheerio HTML"]
+        F2["News Scraper<br/>Cheerio HTML"]
+        F3["MPFA Parser<br/>xlsx Excel"]
+    end
+
+    subgraph AI["AI Processing — Ollama Cloud"]
+        A1["minimax-m2.5<br/>News Classification<br/>sentiment / impact_tags / region"]
+        A2["DeepSeek V3<br/>Insight Generation<br/>market analysis / correlations"]
+    end
+
+    subgraph ALERTS["Alert System"]
+        AL1{"Fund move<br/>> 2%?"}
+        AL2{"High impact<br/>news?"}
+        AL3["Trigger V3<br/>Insight Refresh"]
+        AL4["In-app<br/>Notification"]
+    end
+
+    subgraph DB["Supabase Postgres"]
+        D1[("mpf_funds<br/>25 AIA funds")]
+        D2[("mpf_prices<br/>Daily NAV")]
+        D3[("mpf_news<br/>Tagged articles")]
+        D4[("mpf_fund_news<br/>Correlation join")]
+        D5[("mpf_insights<br/>AI profiles")]
+    end
+
+    subgraph UI["Next.js App — /mpf-care"]
+        U1["Overview<br/>Heatmap + Top Movers"]
+        U2["Fund Explorer<br/>Charts + Timeline"]
+        U3["News & Insights<br/>Filtered Feed"]
+        U4["Rebalancing Insights<br/>AIA MPF Care Profile"]
+    end
+
+    C1 --> F1
+    C2 --> F2
+    C3 --> F3
+    C4 --> F1
+
+    S1 --> F1
+    S2 --> F2
+    S3 --> F3
+    S4 --> D2
+
+    F1 --> D1
+    F1 --> D2
+    F2 --> D3
+    F3 --> D2
+
+    F2 --> A1
+    A1 --> D3
+    A1 --> D4
+
+    D2 --> AL1
+    D3 --> AL2
+    AL1 -->|Yes| AL3
+    AL2 -->|Yes| AL3
+    AL3 --> A2
+    AL3 --> AL4
+    A2 --> D5
+
+    D1 --> UI
+    D2 --> UI
+    D3 --> UI
+    D4 --> UI
+    D5 --> U4
+
+    style CRON fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    style SOURCES fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    style SCRAPERS fill:#e0e7ff,stroke:#6366f1,color:#312e81
+    style AI fill:#fce7f3,stroke:#ec4899,color:#831843
+    style ALERTS fill:#fee2e2,stroke:#ef4444,color:#7f1d1d
+    style DB fill:#d1fae5,stroke:#10b981,color:#064e3b
+    style UI fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95

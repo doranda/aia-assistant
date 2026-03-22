@@ -1,0 +1,62 @@
+sequenceDiagram
+    participant Cron as Vercel Cron
+    participant Scraper as Serverless Function
+    participant Source as AAStocks / News Sites
+    participant AI_CL as minimax-m2.5
+    participant AI_DS as DeepSeek V3
+    participant DB as Supabase
+    participant App as Next.js UI
+    participant Agent as AIA Agent
+
+    rect rgb(219, 234, 254)
+    Note over Cron,Agent: Daily Price Collection (7pm HKT)
+    Cron->>Scraper: Trigger price scraper
+    Scraper->>Source: Fetch fund prices HTML
+    Source-->>Scraper: HTML response
+    Scraper->>Scraper: Parse with Cheerio
+    Scraper->>DB: Upsert mpf_prices
+    Scraper->>Scraper: Check outliers > 2%
+    end
+
+    rect rgb(254, 226, 226)
+    alt Fund moved > 2%
+        Scraper->>AI_DS: Generate alert insight
+        AI_DS-->>DB: Store mpf_insights
+        DB-->>App: Push notification badge
+    end
+    end
+
+    rect rgb(254, 243, 199)
+    Note over Cron,Agent: News Collection (Every 6hrs)
+    Cron->>Scraper: Trigger news scraper
+    Scraper->>Source: Fetch news articles
+    Source-->>Scraper: HTML response
+    Scraper->>AI_CL: Classify news
+    AI_CL-->>Scraper: sentiment + impact_tags + region
+    Scraper->>DB: Insert mpf_news + mpf_fund_news
+    end
+
+    rect rgb(254, 226, 226)
+    alt High impact news
+        Scraper->>AI_DS: Generate full insight refresh
+        AI_DS-->>DB: Store mpf_insights
+        DB-->>App: Push notification badge
+    end
+    end
+
+    rect rgb(209, 250, 229)
+    Note over Cron,Agent: Weekly Insight Profile (Sunday)
+    Cron->>Scraper: Trigger insight generation
+    Scraper->>DB: Gather week prices + news
+    Scraper->>AI_DS: Full portfolio analysis
+    AI_DS-->>Scraper: AIA MPF Care Profile (EN + ZH)
+    Scraper->>DB: Store mpf_insights
+    end
+
+    rect rgb(237, 233, 254)
+    Note over App,Agent: Agent Usage
+    Agent->>App: Open /mpf-care
+    App->>DB: Query latest data
+    DB-->>App: Funds + prices + news + insights
+    App-->>Agent: Overview / Fund Explorer / News / Insights
+    end
