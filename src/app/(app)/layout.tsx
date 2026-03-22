@@ -43,9 +43,20 @@ export default async function AppLayout({
     pendingCount = count || 0;
   }
 
+  // Check for new MPF insights (generated in last 24h)
+  const { count: mpfAlertCount } = await supabase
+    .from("mpf_insights")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "completed")
+    .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
   return (
     <>
-      <TopNav userInitials={initials || "?"} pendingCount={pendingCount} />
+      <TopNav
+        userInitials={initials || "?"}
+        pendingCount={pendingCount}
+        mpfAlertCount={mpfAlertCount || 0}
+      />
       <div className="pt-12 pb-20 lg:pb-0 min-h-dvh">{children}</div>
       <MobileNav pendingCount={pendingCount} />
     </>
