@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/mpf/cron/prices",
+      "schedule": "0 11 * * 1-5"
+    },
+    {
+      "path": "/api/mpf/cron/news",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/mpf/cron/weekly",
+      "schedule": "0 15 * * 0"
+    }
+  ]
+}
