@@ -1,2 +1,2 @@
 "use client";
-export default function AttachmentZone() { return <div />; }
+export function AttachmentZone(props: any) { return <div />; }

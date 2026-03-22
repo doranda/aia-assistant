@@ -1,2 +1,2 @@
 "use client";
-export default function ConversationDrawer() { return <div />; }
+export function ConversationDrawer(props: any) { return <div />; }

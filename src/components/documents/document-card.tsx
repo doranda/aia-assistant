@@ -1,2 +1,2 @@
 "use client";
-export default function DocumentCard() { return <div />; }
+export function DocumentCard(props: any) { return <div />; }

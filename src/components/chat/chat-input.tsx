@@ -1,2 +1,2 @@
 "use client";
-export default function ChatInput() { return <div />; }
+export function ChatInput(props: any) { return <div />; }

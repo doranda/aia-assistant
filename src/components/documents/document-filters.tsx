@@ -1,2 +1,2 @@
 "use client";
-export default function DocumentFilters() { return <div />; }
+export function DocumentFilters(props: any) { return <div />; }

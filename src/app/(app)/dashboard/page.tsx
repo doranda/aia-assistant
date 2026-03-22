@@ -48,7 +48,7 @@ async function getStats() {
     totalMessages: messages.count || 0,
     topFAQs: (faqs.data || []) as { id: string; question: string; use_count: number }[],
     popularQueries: (popularQueries.data || []) as { query_text: string; count: number }[],
-    top3Movers: top3Movers as { daily_change_pct: number | null; date: string; mpf_funds: { fund_code: string; name_en: string } | null }[],
+    top3Movers: top3Movers as unknown as { daily_change_pct: number | null; date: string; mpf_funds: { fund_code: string; name_en: string } | null }[],
     latestInsight: latestInsight as { content_en: string; type: string; created_at: string } | null,
   };
 }

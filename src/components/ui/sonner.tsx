@@ -1,2 +1,2 @@
 "use client";
-export default function Sonner() { return <div />; }
+export function Toaster(props: any) { return <div />; }

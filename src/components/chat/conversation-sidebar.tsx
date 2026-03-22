@@ -1,2 +1,2 @@
 "use client";
-export default function ConversationSidebar() { return <div />; }
+export function ConversationSidebar(props: any) { return <div />; }

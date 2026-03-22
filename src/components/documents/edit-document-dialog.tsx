@@ -1,2 +1,2 @@
 "use client";
-export default function EditDocumentDialog() { return <div />; }
+export function EditDocumentDialog(props: any) { return <div />; }

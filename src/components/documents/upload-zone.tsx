@@ -1,2 +1,2 @@
 "use client";
-export default function UploadZone() { return <div />; }
+export function UploadZone(props: any) { return <div />; }

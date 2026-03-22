@@ -1,2 +1,2 @@
 "use client";
-export default function LoginForm() { return <div />; }
+export function LoginForm(props: any) { return <div />; }

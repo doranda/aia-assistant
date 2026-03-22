@@ -1,2 +1,2 @@
 "use client";
-export default function MessageBubble() { return <div />; }
+export function MessageBubble(props: any) { return <div />; }

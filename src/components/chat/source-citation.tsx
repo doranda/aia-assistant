@@ -1,2 +1,2 @@
 "use client";
-export default function SourceCitation() { return <div />; }
+export function SourceCitation(props: any) { return <div />; }

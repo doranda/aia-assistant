@@ -1,2 +1,2 @@
 "use client";
-export default function TeamManagement() { return <div />; }
+export function TeamManagement(props: any) { return <div />; }

@@ -1,2 +1,2 @@
 "use client";
-export default function DocumentTable() { return <div />; }
+export function DocumentTable(props: any) { return <div />; }
