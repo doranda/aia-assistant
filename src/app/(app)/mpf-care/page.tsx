@@ -17,34 +17,22 @@ async function getOverviewData() {
     .eq("is_active", true)
     .order("fund_code");
 
-  // Get today's prices
-  const today = new Date().toISOString().split("T")[0];
-  const { data: todayPrices } = await supabase
+  // Get ALL prices for backtest calculations
+  const { data: allPrices } = await supabase
     .from("mpf_prices")
     .select("fund_id, nav, daily_change_pct, date")
-    .eq("date", today);
+    .order("date", { ascending: false });
 
-  // If no today prices, get latest price per fund
-  let prices = todayPrices;
-  let priceDate = today;
-  if (!prices?.length) {
-    // Fetch enough rows to cover all 25 funds even with sparse data
-    const { data: latestPrices } = await supabase
-      .from("mpf_prices")
-      .select("fund_id, nav, daily_change_pct, date")
-      .order("date", { ascending: false })
-      .limit(200);
-    // Deduplicate: keep only the latest price per fund_id
-    const seen = new Set<string>();
-    prices = (latestPrices || []).filter((p) => {
-      if (seen.has(p.fund_id)) return false;
-      seen.add(p.fund_id);
-      return true;
-    });
-    priceDate = prices?.[0]?.date || today;
-  }
+  // Latest price per fund
+  const seen = new Set<string>();
+  const latestPrices = (allPrices || []).filter((p) => {
+    if (seen.has(p.fund_id)) return false;
+    seen.add(p.fund_id);
+    return true;
+  });
+  const priceDate = latestPrices?.[0]?.date || new Date().toISOString().split("T")[0];
 
-  const priceMap = new Map(prices?.map((p) => [p.fund_id, p]) || []);
+  const priceMap = new Map(latestPrices.map((p) => [p.fund_id, p]));
 
   const fundsWithPrices: FundWithLatestPrice[] = (funds || []).map((f) => {
     const price = priceMap.get(f.id);
@@ -55,6 +43,61 @@ async function getOverviewData() {
       price_date: price?.date || null,
     };
   });
+
+  // Build price history per fund for backtest
+  const priceHistory = new Map<string, { date: string; nav: number }[]>();
+  for (const p of allPrices || []) {
+    if (!priceHistory.has(p.fund_id)) priceHistory.set(p.fund_id, []);
+    priceHistory.get(p.fund_id)!.push({ date: p.date, nav: p.nav });
+  }
+  // Sort each fund's prices chronologically
+  for (const [, pp] of priceHistory) {
+    pp.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  // Get reference portfolio
+  const { data: refPortfolio } = await supabase
+    .from("mpf_reference_portfolio")
+    .select("fund_id, weight, note, updated_at");
+
+  // Build reference portfolio with returns
+  const fundIdToCode = new Map((funds || []).map((f) => [f.id, f]));
+  const now = new Date();
+  const ytdStart = `${now.getFullYear()}-01-01`;
+
+  const portfolioFunds: { fund_code: string; name_en: string; weight: number; note: string | null; latest_nav: number | null; daily_change_pct: number | null; returns: { mtd: number | null; ytd: number | null; y1: number | null } }[] = (refPortfolio || []).map((rp) => {
+    const fund = fundIdToCode.get(rp.fund_id);
+    if (!fund) return null;
+    const latestPrice = priceMap.get(rp.fund_id);
+    const history = priceHistory.get(rp.fund_id) || [];
+
+    // Calculate returns
+    const latestNav = latestPrice?.nav || null;
+    const firstNav = history.length > 0 ? history[0].nav : null;
+
+    // MTD: latest vs previous month
+    const prevMonth = history.length >= 2 ? history[history.length - 2].nav : null;
+    const mtd = latestNav && prevMonth ? ((latestNav - prevMonth) / prevMonth) * 100 : null;
+
+    // YTD: latest vs closest to Jan 1
+    const ytdPrice = history.find((p) => p.date >= ytdStart) || history[0];
+    const ytd = latestNav && ytdPrice ? ((latestNav - ytdPrice.nav) / ytdPrice.nav) * 100 : null;
+
+    // 1Y: latest vs first (our data spans ~11 months)
+    const y1 = latestNav && firstNav ? ((latestNav - firstNav) / firstNav) * 100 : null;
+
+    return {
+      fund_code: fund.fund_code,
+      name_en: fund.name_en,
+      weight: rp.weight,
+      note: rp.note,
+      latest_nav: latestNav,
+      daily_change_pct: latestPrice?.daily_change_pct || null,
+      returns: { mtd, ytd, y1 },
+    };
+  }).filter((f): f is NonNullable<typeof f> => f !== null);
+
+  const refUpdatedAt = refPortfolio?.[0]?.updated_at || now.toISOString();
 
   // Get latest news (5 items)
   const { data: news } = await supabase
@@ -81,11 +124,19 @@ async function getOverviewData() {
     .limit(1)
     .single();
 
-  return { fundsWithPrices, news: (news || []) as MpfNews[], latestInsight: latestInsight as MpfInsight | null, lastRun, priceDate };
+  return {
+    fundsWithPrices,
+    portfolioFunds,
+    refUpdatedAt,
+    news: (news || []) as MpfNews[],
+    latestInsight: latestInsight as MpfInsight | null,
+    lastRun,
+    priceDate,
+  };
 }
 
 export default async function MpfCarePage() {
-  const { fundsWithPrices, news, latestInsight, lastRun, priceDate } = await getOverviewData();
+  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, lastRun, priceDate } = await getOverviewData();
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
@@ -105,9 +156,13 @@ export default async function MpfCarePage() {
 
       <DisclaimerBanner />
 
-      {/* Portfolio Reference — first thing users see */}
+      {/* Reference Portfolio — first thing users see */}
       <div className="mt-12">
-        <PortfolioReference funds={fundsWithPrices} priceDate={priceDate} />
+        <PortfolioReference
+          funds={portfolioFunds}
+          priceDate={priceDate}
+          updatedAt={refUpdatedAt}
+        />
       </div>
 
       {/* Top Movers — split into Gainers and Losers */}
