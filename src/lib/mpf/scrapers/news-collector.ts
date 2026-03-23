@@ -43,7 +43,16 @@ export async function fetchNews(): Promise<number> {
     url.searchParams.set("pageSize", "10");
     url.searchParams.set("apiKey", apiKey);
 
-    const res = await fetch(url.toString());
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), { signal: controller.signal });
+    } catch {
+      clearTimeout(timeout);
+      continue;
+    }
+    clearTimeout(timeout);
     if (!res.ok) continue;
 
     const data: NewsApiResponse = await res.json();

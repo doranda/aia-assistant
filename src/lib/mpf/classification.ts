@@ -11,12 +11,18 @@ interface ClassificationResult {
 }
 
 /**
- * Classify a news article using minimax-m2.5 via Ollama Cloud.
- * Fast (~1s per article).
+ * Classify a news article using OpenRouter (fast, ~1-2s per article).
+ * Falls back to Ollama if OPENROUTER_API_KEY not set.
  */
 async function classifyArticle(headline: string, summary: string | null): Promise<ClassificationResult> {
-  const ollamaUrl = process.env.OLLAMA_BASE_URL || "https://ollama.com";
-  const ollamaKey = process.env.OLLAMA_API_KEY;
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const apiUrl = openRouterKey
+    ? "https://openrouter.ai/api/v1/chat/completions"
+    : `${process.env.OLLAMA_BASE_URL || "https://ollama.com"}/v1/chat/completions`;
+  const apiKey = openRouterKey || process.env.OLLAMA_API_KEY;
+  const model = openRouterKey
+    ? "nvidia/nemotron-3-super-120b-a12b:free"
+    : (process.env.OLLAMA_CHAT_MODEL || "ministral-3:8b");
 
   const prompt = `Classify this financial news article. Return ONLY valid JSON, no markdown.
 
@@ -35,21 +41,23 @@ Return JSON with these exact fields:
 Rules for is_high_impact:
 - true if sentiment=negative AND impact_tags has 3+ items
 - true if category=policy AND region is hk or china
+- true if about war, sanctions, major central bank decisions, currency crisis
 - false otherwise
 
 Only include relevant impact_tags (usually 1-3).`;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
-  const res = await fetch(`${ollamaUrl}/v1/chat/completions`, {
+  const res = await fetch(apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(ollamaKey ? { Authorization: `Bearer ${ollamaKey}` } : {}),
+      Authorization: `Bearer ${apiKey}`,
+      ...(openRouterKey ? { "HTTP-Referer": "https://aia-assistant.vercel.app" } : {}),
     },
     body: JSON.stringify({
-      model: process.env.OLLAMA_CHAT_MODEL || "ministral-3:8b",
+      model,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
     }),
@@ -58,12 +66,11 @@ Only include relevant impact_tags (usually 1-3).`;
 
   clearTimeout(timeout);
 
-  if (!res.ok) throw new Error(`Ollama classification failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Classification failed: ${res.status}`);
 
   const data = await res.json();
   const content = data.choices?.[0]?.message?.content || "";
 
-  // Parse JSON from response (handle potential markdown wrapping)
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     return { sentiment: "neutral", category: "markets", region: "global", impact_tags: [], is_high_impact: false };
@@ -81,12 +88,12 @@ Only include relevant impact_tags (usually 1-3).`;
 }
 
 /**
- * Classify all unclassified news (placeholder sentiment=neutral, empty impact_tags).
+ * Classify all unclassified news articles.
+ * Returns count of newly classified articles and whether any are high-impact.
  */
-export async function classifyUnclassifiedNews(): Promise<number> {
+export async function classifyUnclassifiedNews(): Promise<{ classified: number; highImpactCount: number }> {
   const supabase = createAdminClient();
 
-  // Get news with empty impact_tags (unclassified)
   const { data: unclassified } = await supabase
     .from("mpf_news")
     .select("id, headline, summary")
@@ -94,14 +101,12 @@ export async function classifyUnclassifiedNews(): Promise<number> {
     .order("published_at", { ascending: false })
     .limit(5);
 
-  if (!unclassified?.length) return 0;
+  if (!unclassified?.length) return { classified: 0, highImpactCount: 0 };
 
-  let classified = 0;
-
-  for (const article of unclassified) {
-    try {
+  // Classify in parallel for speed
+  const results = await Promise.allSettled(
+    unclassified.map(async (article) => {
       const result = await classifyArticle(article.headline, article.summary);
-
       await supabase
         .from("mpf_news")
         .update({
@@ -112,13 +117,18 @@ export async function classifyUnclassifiedNews(): Promise<number> {
           is_high_impact: result.is_high_impact,
         })
         .eq("id", article.id);
+      return result;
+    })
+  );
 
+  let classified = 0;
+  let highImpactCount = 0;
+  for (const r of results) {
+    if (r.status === "fulfilled") {
       classified++;
-    } catch {
-      // Skip failed classifications, retry next run
-      continue;
+      if (r.value.is_high_impact) highImpactCount++;
     }
   }
 
-  return classified;
+  return { classified, highImpactCount };
 }
