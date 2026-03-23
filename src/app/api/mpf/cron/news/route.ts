@@ -3,13 +3,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 60;
 
+const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
+const MODEL = "google/gemini-2.0-flash";
+
+function gatewayHeaders() {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "No key" }, { status: 500 });
+  const apiKey = process.env.AI_GATEWAY_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "No AI_GATEWAY_API_KEY" }, { status: 500 });
 
   const t0 = Date.now();
   const supabase = createAdminClient();
@@ -21,25 +31,38 @@ export async function GET(req: NextRequest) {
       .eq("impact_tags", "{}").order("published_at", { ascending: false }).limit(5);
     for (const a of articles || []) {
       try {
-        const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        const r = await fetch(GATEWAY_URL, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, "HTTP-Referer": "https://aia-assistant.vercel.app" },
-          body: JSON.stringify({ model: "nvidia/nemotron-3-super-120b-a12b:free", messages: [{ role: "user", content: `Classify: "${a.headline}". Return JSON: {"sentiment":"positive/negative/neutral","region":"global/asia/hk/china","impact_tags":[],"is_high_impact":false}` }], temperature: 0.1 }),
+          headers: gatewayHeaders(),
+          body: JSON.stringify({ model: MODEL, messages: [{ role: "user", content: `Classify: "${a.headline}". Return JSON: {"sentiment":"positive/negative/neutral","category":"markets/geopolitical/policy/macro","region":"global/asia/hk/china","impact_tags":[],"is_high_impact":false}. Tags from: hk_equity,asia_equity,us_equity,eu_equity,global_equity,bond,fx,rates,china,green_esg. is_high_impact=true for war/sanctions/central bank/crisis.` }], temperature: 0.1 }),
           signal: AbortSignal.timeout(10000),
         });
         const d = await r.json();
         const m = (d.choices?.[0]?.message?.content || "").match(/\{[\s\S]*?\}/);
         if (m) {
           const p = JSON.parse(m[0]);
-          await supabase.from("mpf_news").update({ sentiment: p.sentiment||"neutral", region: p.region||"global", impact_tags: p.impact_tags||[], is_high_impact: !!p.is_high_impact }).eq("id", a.id);
+          await supabase.from("mpf_news").update({ sentiment: p.sentiment||"neutral", category: p.category||"markets", region: p.region||"global", impact_tags: p.impact_tags||[], is_high_impact: !!p.is_high_impact }).eq("id", a.id);
           classified++; if (p.is_high_impact) highImpact++;
         }
       } catch { /* skip */ }
     }
   } catch { /* skip */ }
 
-  // REBALANCE
+  // REBALANCE CHECK
   try {
+    // Rate limit: skip if rebalanced within 7 days (unless high-impact news)
+    if (highImpact === 0) {
+      const { data: lastRebs } = await supabase.from("mpf_insights").select("created_at")
+        .eq("trigger", "portfolio_rebalance").order("created_at", { ascending: false }).limit(1);
+      const lastReb = lastRebs?.[0];
+      if (lastReb && (Date.now() - new Date(lastReb.created_at).getTime()) < 7 * 86400000) {
+        rebResult = "skipped — last rebalance < 7 days ago";
+        // Skip to end
+        await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: classified, duration_ms: Date.now() - t0 });
+        return NextResponse.json({ ok: true, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
+      }
+    }
+
     const { data: pf } = await supabase.from("mpf_reference_portfolio").select("fund_id, weight");
     const { data: funds } = await supabase.from("mpf_funds").select("id, fund_code, name_en");
     const { data: prices } = await supabase.from("mpf_prices").select("fund_id, daily_change_pct").order("date", { ascending: false }).limit(50);
@@ -54,10 +77,13 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const perf = (funds||[]).filter((f:any)=>pm.has(f.id)).map((f:any)=>`${f.fund_code}:${(pm.get(f.id)||0).toFixed(1)}%`).join(", ");
 
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const { data: hiNews } = await supabase.from("mpf_news").select("headline, sentiment")
+      .eq("is_high_impact", true).gte("published_at", new Date(Date.now() - 86400000).toISOString());
+
+    const r = await fetch(GATEWAY_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, "HTTP-Referer": "https://aia-assistant.vercel.app" },
-      body: JSON.stringify({ model: "nvidia/nemotron-3-super-120b-a12b:free", messages: [{ role: "user", content: `MPF portfolio manager. Current: ${cur}. Performance: ${perf}. Should rebalance? 1-5 funds, 10% increments, total 100%. Return ONLY JSON: {"should_rebalance":false,"reason":"why","new_portfolio":[{"fund_code":"AIA-XXX","weight":30,"rationale":"why"}]}` }], temperature: 0.2 }),
+      headers: gatewayHeaders(),
+      body: JSON.stringify({ model: MODEL, messages: [{ role: "user", content: `MPF portfolio manager for AIA Hong Kong. Current portfolio: ${cur}. Recent high-impact news: ${(hiNews||[]).map(n=>`[${n.sentiment}] ${n.headline}`).join("; ")||"None"}. Fund performance: ${perf}. Should this portfolio be rebalanced? Rules: 1-5 funds, weights in 10% increments totaling 100%. Available: AIA-AEF,AIA-EEF,AIA-GCF,AIA-NAF,AIA-GRF,AIA-AMI,AIA-EAI,AIA-HCI,AIA-WIF,AIA-GRW,AIA-BAL,AIA-CST,AIA-CHD,AIA-MCF,AIA-ABF,AIA-GBF,AIA-CON. Return ONLY JSON: {"should_rebalance":false,"reason":"why","new_portfolio":[{"fund_code":"AIA-XXX","weight":30,"rationale":"why"}]}` }], temperature: 0.2 }),
       signal: AbortSignal.timeout(15000),
     });
     const d = await r.json();
@@ -79,5 +105,6 @@ export async function GET(req: NextRequest) {
     } else { rebResult = `no json. status:${r.status} content:${(d.choices?.[0]?.message?.content||d.error?.message||"empty").slice(0,200)}`; }
   } catch (e) { rebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
 
-  return NextResponse.json({ ok:true, classified, highImpact, rebalance: rebResult, ms: Date.now()-t0 });
+  await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: classified, duration_ms: Date.now() - t0 });
+  return NextResponse.json({ ok: true, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
 }
