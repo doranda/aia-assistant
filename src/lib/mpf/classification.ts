@@ -15,8 +15,8 @@ interface ClassificationResult {
  * Fast (~1s per article).
  */
 async function classifyArticle(headline: string, summary: string | null): Promise<ClassificationResult> {
-  const ollamaUrl = process.env.OLLAMA_CLOUD_URL || "https://api.ollama.cloud/v1";
-  const ollamaKey = process.env.OLLAMA_CLOUD_KEY;
+  const ollamaUrl = process.env.OLLAMA_BASE_URL || "https://ollama.com";
+  const ollamaKey = process.env.OLLAMA_API_KEY;
 
   const prompt = `Classify this financial news article. Return ONLY valid JSON, no markdown.
 
@@ -39,18 +39,24 @@ Rules for is_high_impact:
 
 Only include relevant impact_tags (usually 1-3).`;
 
-  const res = await fetch(`${ollamaUrl}/chat/completions`, {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  const res = await fetch(`${ollamaUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(ollamaKey ? { Authorization: `Bearer ${ollamaKey}` } : {}),
     },
     body: JSON.stringify({
-      model: "minimax-m2.5",
+      model: process.env.OLLAMA_CHAT_MODEL || "ministral-3:8b",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
     }),
+    signal: controller.signal,
   });
+
+  clearTimeout(timeout);
 
   if (!res.ok) throw new Error(`Ollama classification failed: ${res.status}`);
 
@@ -86,7 +92,7 @@ export async function classifyUnclassifiedNews(): Promise<number> {
     .select("id, headline, summary")
     .eq("impact_tags", "{}")
     .order("published_at", { ascending: false })
-    .limit(50);
+    .limit(5);
 
   if (!unclassified?.length) return 0;
 

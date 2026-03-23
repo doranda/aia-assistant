@@ -1,5 +1,5 @@
 // src/lib/mpf/scrapers/fund-prices.ts
-import * as cheerio from "cheerio";
+import * as XLSX from "xlsx";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PriceSource } from "../types";
 
@@ -10,48 +10,47 @@ interface ScrapedPrice {
   source: PriceSource;
 }
 
-// Static lookup: AAStocks fund display names → our internal fund codes.
-// UPDATE this map if AAStocks changes their fund naming.
-const AASTOCKS_NAME_TO_CODE: Record<string, string> = {
+// MPFA Excel fund names → our internal fund codes.
+// MPFA uses slightly different names than our constants (e.g. "American Fund" vs "American Index Fund").
+const MPFA_NAME_TO_CODE: Record<string, string> = {
+  "Age 65 Plus Fund": "AIA-65P",
+  "American Fund": "AIA-AMI",
+  "Asian Bond Fund": "AIA-ABF",
   "Asian Equity Fund": "AIA-AEF",
+  "Balanced Portfolio": "AIA-BAL",
+  "Capital Stable Portfolio": "AIA-CST",
+  "China HK Dynamic Asset Allocation Fund": "AIA-CHD",
+  "Core Accumulation Fund": "AIA-CAF",
+  "Eurasia Fund": "AIA-EAI",
   "European Equity Fund": "AIA-EEF",
+  "Global Bond Fund": "AIA-GBF",
   "Greater China Equity Fund": "AIA-GCF",
+  "Green Fund": "AIA-GRF",
+  "Growth Portfolio": "AIA-GRW",
+  "Guaranteed Portfolio": "AIA-GPF",
+  "Hong Kong and China Fund": "AIA-HCI",
   "Hong Kong Equity Fund": "AIA-HEF",
   "Japan Equity Fund": "AIA-JEF",
-  "North American Equity Fund": "AIA-NAF",
-  "Green Fund": "AIA-GRF",
-  "American Index Tracking Fund": "AIA-AMI",
-  "Eurasia Index Tracking Fund": "AIA-EAI",
-  "Hong Kong and China Index Tracking Fund": "AIA-HCI",
-  "World Index Tracking Fund": "AIA-WIF",
-  "Growth Fund": "AIA-GRW",
-  "Balanced Fund": "AIA-BAL",
-  "Capital Stable Fund": "AIA-CST",
-  "China Hong Kong Dynamic Fund": "AIA-CHD",
   "Manager's Choice Fund": "AIA-MCF",
+  "MPF Conservative Fund": "AIA-CON",
+  "North American Equity Fund": "AIA-NAF",
+  "World Fund": "AIA-WIF",
+  // Fidelity funds — MPFA may list under different names
   "Fidelity Growth Fund": "AIA-FGR",
   "Fidelity Stable Growth Fund": "AIA-FSG",
   "Fidelity Capital Stable Fund": "AIA-FCS",
-  "Asian Bond Fund": "AIA-ABF",
-  "Global Bond Fund": "AIA-GBF",
-  "MPF Conservative Fund": "AIA-CON",
-  "Guaranteed Portfolio": "AIA-GPF",
-  "Core Accumulation Fund": "AIA-CAF",
-  "Age 65 Plus Fund": "AIA-65P",
 };
 
 /**
- * Match scraped fund name to internal fund code using static lookup.
- * Falls back to fuzzy match on key words.
+ * Match scraped fund name to internal fund code.
+ * Tries exact match first, then fuzzy containment.
  */
 function matchFundCode(scrapedName: string): string | null {
-  // Exact match first
-  const exact = AASTOCKS_NAME_TO_CODE[scrapedName];
+  const exact = MPFA_NAME_TO_CODE[scrapedName];
   if (exact) return exact;
 
-  // Fuzzy: check if any lookup key is contained in the scraped name
   const lower = scrapedName.toLowerCase();
-  for (const [displayName, code] of Object.entries(AASTOCKS_NAME_TO_CODE)) {
+  for (const [displayName, code] of Object.entries(MPFA_NAME_TO_CODE)) {
     if (lower.includes(displayName.toLowerCase())) return code;
   }
 
@@ -59,51 +58,145 @@ function matchFundCode(scrapedName: string): string | null {
 }
 
 /**
- * Scrape AAStocks MPF fund prices page.
- * This is the SECONDARY source — used when MPFA Excel is unavailable.
+ * Build MPFA Excel URL for a given month.
+ * Format: consolidated_list_for_{mon}_{yy}_read_only.xls
+ * MPFA publishes by mid of the following month.
  */
-export async function scrapeAAStocksPrices(): Promise<ScrapedPrice[]> {
-  const prices: ScrapedPrice[] = [];
+function getMPFAExcelUrl(year: number, month: number): string {
+  const monthNames = [
+    "jan", "feb", "mar", "apr", "may", "jun",
+    "jul", "aug", "sep", "oct", "nov", "dec",
+  ];
+  const mon = monthNames[month - 1];
+  const yy = String(year).slice(-2);
+  return `https://www.mpfa.org.hk/en/-/media/files/information-centre/fund-information/monthly-fund-price/consolidated_list_for_${mon}_${yy}_read_only.xls`;
+}
 
-  // AAStocks MPF overview page lists all AIA funds
-  const res = await fetch("https://www.aastocks.com/en/mpf/fundlist.aspx?t=1&s=AIA", {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; AIA-Hub/1.0)" },
-  });
+/**
+ * Parse MPFA Excel workbook and extract AIA fund prices.
+ * Returns prices with the valuation date from the header.
+ */
+function parseExcel(buffer: ArrayBuffer): { prices: ScrapedPrice[]; date: string } {
+  const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const data: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-  if (!res.ok) {
-    throw new Error(`AAStocks fetch failed: ${res.status}`);
+  // Extract date from header row (row index 4): "as at DD.MM.YYYY"
+  let dateStr = "";
+  const headerRow = data[4];
+  if (headerRow) {
+    const dateCell = String(headerRow[3] || "");
+    const match = dateCell.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    if (match) {
+      dateStr = `${match[3]}-${match[2]}-${match[1]}`; // YYYY-MM-DD
+    }
   }
 
-  const html = await res.text();
-  const $ = cheerio.load(html);
+  if (!dateStr) {
+    // Fallback: try title row for month/year
+    const title = String(data[0]?.[0] || "");
+    const m = title.match(/\((\w+)\s+(\d{4})\)/);
+    if (m) {
+      const monthMap: Record<string, string> = {
+        January: "01", February: "02", March: "03", April: "04",
+        May: "05", June: "06", July: "07", August: "08",
+        September: "09", October: "10", November: "11", December: "12",
+      };
+      const mm = monthMap[m[1]] || "01";
+      dateStr = `${m[2]}-${mm}-28`; // Use end of month as fallback
+    }
+  }
 
-  // Parse fund table rows — structure may change, log HTML for debugging
-  // Each row: fund name | NAV | date | 1D change
-  $("table.mpf-fund-table tr").each((_i, row) => {
-    const cells = $(row).find("td");
-    if (cells.length < 4) return;
+  // Find AIA section boundaries
+  let aiaStart = -1;
+  let aiaEnd = data.length;
 
-    const name = $(cells[0]).text().trim();
-    const navText = $(cells[1]).text().trim();
-    const dateText = $(cells[2]).text().trim();
+  for (let i = 7; i < data.length; i++) {
+    const row = data[i];
+    if (!row) continue;
+    const col0 = row[0];
+    if (typeof col0 === "string" && col0.trim()) {
+      if (col0.includes("AIA") && aiaStart === -1) {
+        aiaStart = i;
+      } else if (aiaStart !== -1 && !col0.includes("AIA") && !col0.includes("友邦")) {
+        aiaEnd = i;
+        break;
+      }
+    }
+  }
 
-    const nav = parseFloat(navText.replace(/[^0-9.]/g, ""));
-    if (isNaN(nav)) return;
+  const prices: ScrapedPrice[] = [];
 
-    // Match to our fund code via static lookup
-    const fundCode = matchFundCode(name);
-    if (!fundCode) return;
+  for (let i = aiaStart; i < aiaEnd; i++) {
+    const row = data[i];
+    if (!row) continue;
 
-    // Parse date (format: DD/MM/YYYY → YYYY-MM-DD)
-    const [dd, mm, yyyy] = dateText.split("/");
-    if (!dd || !mm || !yyyy) return;
-    const date = `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+    const fundName = row[2];
+    const nav = row[3];
 
-    prices.push({ fund_code: fundCode, date, nav, source: "aastocks" });
-  });
+    if (typeof fundName === "string" && typeof nav === "number") {
+      const fundCode = matchFundCode(fundName);
+      if (fundCode) {
+        prices.push({ fund_code: fundCode, date: dateStr, nav, source: "mpfa" });
+      }
+    }
+  }
 
-  return prices;
+  return { prices, date: dateStr };
 }
+
+/**
+ * Fetch and parse MPFA monthly fund prices.
+ * PRIMARY source — published monthly by MPFA with all AIA fund NAVs.
+ * Tries current month first, falls back to previous month.
+ */
+export async function scrapeMPFAPrices(): Promise<ScrapedPrice[]> {
+  const now = new Date();
+  // MPFA publishes by mid-month for previous month
+  // Try previous month first (more likely to be available)
+  const attempts = [
+    { year: now.getFullYear(), month: now.getMonth() }, // previous month (getMonth is 0-indexed)
+    { year: now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear(), month: now.getMonth() === 0 ? 12 : now.getMonth() },
+  ];
+
+  // Adjust: getMonth() is 0-indexed, so getMonth() gives prev month number in 1-indexed
+  // Actually: if now is March (getMonth()=2), prev month = Feb = month 2
+  const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+  const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const twoMonthsAgo = prevMonth === 1 ? 12 : prevMonth - 1;
+  const twoMonthsYear = prevMonth === 1 ? prevYear - 1 : prevYear;
+
+  const urls = [
+    getMPFAExcelUrl(prevYear, prevMonth),
+    getMPFAExcelUrl(twoMonthsYear, twoMonthsAgo),
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; AIA-Hub/1.0)" },
+      });
+
+      if (!res.ok) continue;
+
+      const buffer = await res.arrayBuffer();
+      const { prices, date } = parseExcel(buffer);
+
+      if (prices.length > 0) {
+        console.log(`[MPFA] Parsed ${prices.length} AIA funds for ${date} from ${url}`);
+        return prices;
+      }
+    } catch (err) {
+      console.error(`[MPFA] Failed to fetch ${url}:`, err);
+      continue;
+    }
+  }
+
+  return [];
+}
+
+// Keep AAStocks as legacy export name for backward compat with cron route
+export const scrapeAAStocksPrices = scrapeMPFAPrices;
 
 /**
  * Upsert scraped prices into mpf_prices table.

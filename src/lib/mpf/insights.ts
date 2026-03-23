@@ -9,8 +9,8 @@ import type { MpfInsight } from "./types";
  */
 export async function generateInsight(insightId: string): Promise<void> {
   const supabase = createAdminClient();
-  const ollamaUrl = process.env.OLLAMA_CLOUD_URL || "https://api.ollama.cloud/v1";
-  const ollamaKey = process.env.OLLAMA_CLOUD_KEY;
+  const ollamaUrl = process.env.OLLAMA_BASE_URL || "https://ollama.com";
+  const ollamaKey = process.env.OLLAMA_API_KEY;
 
   // Mark as generating
   await supabase
@@ -134,7 +134,7 @@ RULES:
 }
 
 async function callDeepSeek(baseUrl: string, apiKey: string | undefined, prompt: string): Promise<string> {
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
