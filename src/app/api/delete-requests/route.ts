@@ -1,3 +1,125 @@
 import { NextResponse } from "next/server";
-export async function GET() { return NextResponse.json({ status: "ok" }); }
-export async function POST() { return NextResponse.json({ status: "ok" }); }
+import { createClient } from "@/lib/supabase/server";
+import { canApproveDeletions } from "@/lib/permissions";
+import type { UserRole } from "@/lib/types";
+
+/** GET: List pending delete requests (admin/manager) */
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const role = profile?.role as UserRole;
+  if (!canApproveDeletions(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { data: requests, error } = await supabase
+    .from("delete_requests")
+    .select(
+      `
+      *,
+      documents:document_id (id, title, category),
+      requester:requested_by (full_name, email)
+    `
+    )
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return NextResponse.json(
+      { error: `Query failed: ${error.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json(requests || []);
+}
+
+/** PATCH: Approve or reject a delete request */
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const role = profile?.role as UserRole;
+  if (!canApproveDeletions(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await request.json();
+  const { id, action } = body;
+
+  if (!id || !["approve", "reject"].includes(action)) {
+    return NextResponse.json(
+      { error: "id and action (approve/reject) required" },
+      { status: 400 }
+    );
+  }
+
+  // Update the request status
+  const { data: req, error: updateError } = await supabase
+    .from("delete_requests")
+    .update({
+      status: action === "approve" ? "approved" : "rejected",
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select("*, documents:document_id (id, file_path)")
+    .single();
+
+  if (updateError) {
+    return NextResponse.json(
+      { error: `Update failed: ${updateError.message}` },
+      { status: 500 }
+    );
+  }
+
+  // If approved, actually delete the document
+  if (action === "approve" && req) {
+    const doc = req.documents as unknown as {
+      id: string;
+      file_path: string;
+    };
+
+    // Soft delete
+    await supabase
+      .from("documents")
+      .update({ is_deleted: true })
+      .eq("id", doc.id);
+
+    // Delete chunks
+    await supabase.from("chunks").delete().eq("document_id", doc.id);
+
+    // Remove from storage
+    if (doc.file_path) {
+      await supabase.storage.from("documents").remove([doc.file_path]);
+    }
+  }
+
+  return NextResponse.json({ success: true, action });
+}

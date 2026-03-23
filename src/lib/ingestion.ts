@@ -8,7 +8,7 @@ export async function extractPdfText(
 ): Promise<{ text: string; pageNumber: number }[]> {
   // Import the lib directly to skip pdf-parse's test file requirement
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfParse = require("pdf-parse/lib/pdf-parse");
+  const pdfParse = (await import("pdf-parse")).default;
   const nodeBuffer = Buffer.from(buffer);
   const data = await pdfParse(nodeBuffer);
 
