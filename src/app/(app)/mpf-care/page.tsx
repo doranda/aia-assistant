@@ -1,5 +1,6 @@
 // src/app/(app)/mpf-care/page.tsx
 import { createClient } from "@/lib/supabase/server";
+import { PortfolioReference } from "@/components/mpf/portfolio-reference";
 import { FundHeatmap } from "@/components/mpf/fund-heatmap";
 import { TopMovers } from "@/components/mpf/top-movers";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
@@ -104,8 +105,13 @@ export default async function MpfCarePage() {
 
       <DisclaimerBanner />
 
-      {/* Top Movers */}
-      <section aria-labelledby="top-movers-heading" className="mt-12 mb-16">
+      {/* Portfolio Reference — first thing users see */}
+      <div className="mt-12">
+        <PortfolioReference funds={fundsWithPrices} priceDate={priceDate} />
+      </div>
+
+      {/* Top Movers — split into Gainers and Losers */}
+      <section aria-labelledby="top-movers-heading" className="mb-16">
         <div className="flex items-center gap-2 mb-6">
           <TrendingUp className="w-4 h-4 text-zinc-600" />
           <h2 id="top-movers-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
