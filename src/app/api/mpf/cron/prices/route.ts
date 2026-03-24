@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scrapeAAStocksPrices, upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
-import { scrapeAIAPerformance, upsertFundReturns } from "@/lib/mpf/scrapers/aia-api";
+import { scrapeAIAPerformance, upsertFundReturns, scrapeAIADailyPrices, upsertDailyPrices } from "@/lib/mpf/scrapers/aia-api";
+import { fetchMissingFundPrices } from "@/lib/mpf/scrapers/brave-search";
 import { PRICE_OUTLIER_THRESHOLD_PCT } from "@/lib/mpf/constants";
 import { processPendingAlerts } from "@/lib/mpf/alerts";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
@@ -31,38 +32,73 @@ export async function GET(req: NextRequest) {
   let count = 0;
 
   try {
-    // PRIMARY: AIA JSON API — richer data (multi-period returns + calendar years)
-    let aiaSuccess = false;
+    // STEP 1: Daily NAV prices from AIA getFundPriceList (T+2 business day lag)
+    let dailySuccess = false;
     try {
-      const aiaData = await scrapeAIAPerformance();
-      count = await upsertFundReturns(aiaData);
-      source = "aia_api";
-      aiaSuccess = true;
-      console.log(`[prices-cron] AIA API succeeded: ${count} funds upserted`);
+      const dailyData = await scrapeAIADailyPrices();
+      const dailyCount = await upsertDailyPrices(dailyData);
+      source = "aia_daily";
+      count = dailyCount;
+      dailySuccess = true;
+      console.log(`[prices-cron] AIA daily prices: ${dailyCount} funds upserted (date: ${dailyData.priceDate})`);
 
-      // Stale source detection
+      // Stale source detection — if data is older than T+3 on a weekday
       const now = new Date();
       const hkTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Hong_Kong" }));
-      if (hkTime.getHours() >= 19) {
-        const today = hkTime.toISOString().split("T")[0];
-        if (aiaData.asAtDate && aiaData.asAtDate < today) {
+      const dayOfWeek = hkTime.getDay(); // 0=Sun, 6=Sat
+      if (dayOfWeek >= 1 && dayOfWeek <= 5 && hkTime.getHours() >= 19) {
+        const threeDaysAgo = new Date(hkTime);
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const cutoff = threeDaysAgo.toISOString().split("T")[0];
+        if (dailyData.priceDate && dailyData.priceDate < cutoff) {
           await sendDiscordAlert({
             title: "\u26a0\ufe0f MPF Care \u2014 Stale Price Data",
-            description: `AIA API returned data from ${aiaData.asAtDate} (expected ${today})`,
+            description: `AIA daily API returned data from ${dailyData.priceDate} (>3 days old)`,
             color: COLORS.yellow,
           });
         }
       }
-    } catch (aiaErr) {
-      console.error("[prices-cron] AIA API failed, falling back to MPFA Excel:", aiaErr);
+    } catch (dailyErr) {
+      console.error("[prices-cron] AIA daily prices failed:", dailyErr);
     }
 
-    // FALLBACK: MPFA Excel — used only if AIA API failed
-    if (!aiaSuccess) {
-      const prices = await scrapeAAStocksPrices();
-      count = await upsertPrices(prices);
-      source = "mpfa";
-      console.log(`[prices-cron] MPFA fallback succeeded: ${count} records upserted`);
+    // STEP 2: Monthly performance returns from AIA getFundPerformance (always run)
+    try {
+      const aiaData = await scrapeAIAPerformance();
+      const returnsCount = await upsertFundReturns(aiaData);
+      console.log(`[prices-cron] AIA returns: ${returnsCount} funds upserted (as-at: ${aiaData.asAtDate})`);
+      if (!dailySuccess) {
+        source = "aia_api";
+        count = returnsCount;
+      }
+    } catch (aiaErr) {
+      console.error("[prices-cron] AIA performance API failed:", aiaErr);
+    }
+
+    // STEP 3 (FALLBACK): MPFA Excel — only if daily prices failed
+    if (!dailySuccess) {
+      try {
+        const prices = await scrapeAAStocksPrices();
+        const mpfaCount = await upsertPrices(prices);
+        if (count === 0) {
+          source = "mpfa";
+          count = mpfaCount;
+        }
+        console.log(`[prices-cron] MPFA fallback: ${mpfaCount} records upserted`);
+      } catch (mpfaErr) {
+        console.error("[prices-cron] MPFA fallback also failed:", mpfaErr);
+      }
+    }
+
+    // STEP 4: Brave Search backfill for 5 missing funds
+    let braveCount = 0;
+    try {
+      braveCount = await fetchMissingFundPrices();
+      if (braveCount > 0) {
+        console.log(`[prices-cron] Brave Search backfill: ${braveCount} prices inserted`);
+      }
+    } catch (braveErr) {
+      console.error("[prices-cron] Brave Search backfill failed:", braveErr);
     }
 
     // Update scraper run
@@ -101,7 +137,7 @@ export async function GET(req: NextRequest) {
     }
 
     await processPendingAlerts();
-    return NextResponse.json({ ok: true, count, source, outliers: outlierFunds?.length || 0 });
+    return NextResponse.json({ ok: true, count, source, brave: braveCount, outliers: outlierFunds?.length || 0 });
   } catch (error) {
     await supabase
       .from("scraper_runs")
