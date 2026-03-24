@@ -5,6 +5,10 @@
       "schedule": "0 11 * * 1-5"
     },
     {
+      "path": "/api/mpf/cron/metrics",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
       "path": "/api/mpf/cron/news",
       "schedule": "0 */6 * * *"
     },
