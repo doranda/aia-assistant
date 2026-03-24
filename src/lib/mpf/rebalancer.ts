@@ -1,41 +1,115 @@
-// src/lib/mpf/rebalancer.ts
+// src/lib/mpf/rebalancer.ts — Dual-Agent Debate Rebalancer
+// 4-call pipeline: Quant (parallel) + News (parallel) → Debate → Mediator
 import { createAdminClient } from "@/lib/supabase/admin";
-import { IMPACT_TAG_TO_FUNDS } from "./constants";
+import { INVESTMENT_PROFILE } from "./constants";
 
-interface PortfolioHolding {
-  fund_id: string;
-  fund_code: string;
-  weight: number;
-  name_en: string;
-  category: string;
-  daily_change_pct: number | null;
+const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
+const MODEL = "anthropic/claude-sonnet-4.6";
+const PER_CALL_TIMEOUT = 30000; // 30s
+
+interface PortfolioProposal {
+  funds: { code: string; weight: number; reasoning: string }[];
+  summary: string;
+}
+
+interface DebateResult {
+  agreements: string[];
+  conflicts: { topic: string; quantPosition: string; newsPosition: string; verdict: string; reasoning: string }[];
+  recommendation: string;
+}
+
+interface MediatorResult {
+  funds: { code: string; weight: number }[];
+  summary_en: string;
+  summary_zh: string;
+  debate_log: string;
 }
 
 interface RebalanceResult {
   rebalanced: boolean;
   reason: string;
-  changes?: { from?: string; to?: string; weight: number; rationale: string }[];
+  debate_log?: string;
+}
+
+async function callGateway(systemPrompt: string, userContent: string): Promise<string> {
+  const key = process.env.AI_GATEWAY_API_KEY;
+  if (!key) throw new Error("No AI_GATEWAY_API_KEY");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PER_CALL_TIMEOUT);
+
+  try {
+    const res = await fetch(GATEWAY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.3,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`AI Gateway ${res.status}`);
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+function parseJSON<T>(raw: string): T | null {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[0]) as T;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Check if portfolio needs rebalancing and execute if so.
+ * Check if portfolio needs rebalancing and execute via dual-agent debate.
  * Called after news classification to react to market events.
  *
  * Rules:
  * - Max 1 rebalance/week for normal drift
- * - NO limit for high-impact news
- * - Only change if evidence supports it
+ * - Max 3 rebalances/day (absolute ceiling)
+ * - NO weekly limit for high-impact news (still capped at 3/day)
  */
 export async function evaluateAndRebalance(highImpactCount: number): Promise<RebalanceResult> {
   const supabase = createAdminClient();
 
-  // 1. Check last rebalance time (skip if within 7 days, unless high-impact)
+  // Daily cap: max 3 rebalances per day
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const { count: todayCount } = await supabase
+    .from("mpf_insights")
+    .select("id", { count: "exact", head: true })
+    .in("type", ["alert", "rebalance_debate"])
+    .in("trigger", ["portfolio_rebalance", "debate_rebalance"])
+    .gte("created_at", todayStart.toISOString());
+
+  if ((todayCount || 0) >= 3) {
+    return { rebalanced: false, reason: "Daily rebalance cap reached (3/day)" };
+  }
+
+  // Weekly rate limit (skip if high-impact news)
   if (highImpactCount === 0) {
     const { data: lastRebalance } = await supabase
       .from("mpf_insights")
       .select("created_at")
-      .eq("type", "alert")
-      .eq("trigger", "portfolio_rebalance")
+      .in("type", ["alert", "rebalance_debate"])
+      .in("trigger", ["portfolio_rebalance", "debate_rebalance"])
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
@@ -48,186 +122,193 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
     }
   }
 
-  // 2. Get current portfolio
+  // Gather data for agents
   const { data: portfolio } = await supabase
     .from("mpf_reference_portfolio")
     .select("fund_id, weight, note");
 
   if (!portfolio?.length) return { rebalanced: false, reason: "No reference portfolio set" };
 
-  // 3. Get fund details + latest prices
   const { data: funds } = await supabase
     .from("mpf_funds")
     .select("id, fund_code, name_en, category, risk_rating");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fundMap = new Map((funds || []).map((f: any) => [f.id, f]));
+  const fundMap = new Map((funds || []).map(f => [f.id, f]));
+  const fundCodeToId = new Map((funds || []).map(f => [f.fund_code, f.id]));
 
-  const { data: latestPrices } = await supabase
-    .from("mpf_prices")
-    .select("fund_id, daily_change_pct, date")
-    .order("date", { ascending: false })
-    .limit(200);
-
-  const priceMap = new Map<string, number>();
-  for (const p of latestPrices || []) {
-    if (!priceMap.has(p.fund_id)) priceMap.set(p.fund_id, p.daily_change_pct || 0);
-  }
-
-  const holdings: PortfolioHolding[] = portfolio.map(p => {
+  const currentHoldings = portfolio.map(p => {
     const fund = fundMap.get(p.fund_id);
-    return {
-      fund_id: p.fund_id,
-      fund_code: fund?.fund_code || "",
-      weight: p.weight,
-      name_en: fund?.name_en || "",
-      category: fund?.category || "",
-      daily_change_pct: priceMap.get(p.fund_id) ?? null,
-    };
+    return { code: fund?.fund_code || "", name: fund?.name_en || "", weight: p.weight };
   });
 
-  // 4. Get recent high-impact news (last 24 hours)
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data: recentHighImpact } = await supabase
+  // Get fund metrics
+  const { data: metrics } = await supabase
+    .from("mpf_fund_metrics")
+    .select("*")
+    .eq("period", "3y");
+
+  const metricsText = (metrics || []).map(m =>
+    `${m.fund_code}: Sortino=${m.sortino_ratio?.toFixed(2) ?? "N/A"}, Sharpe=${m.sharpe_ratio?.toFixed(2) ?? "N/A"}, MaxDD=${m.max_drawdown_pct !== null ? (m.max_drawdown_pct * 100).toFixed(1) + "%" : "N/A"}, CAGR=${m.annualized_return_pct !== null ? (m.annualized_return_pct * 100).toFixed(1) + "%" : "N/A"}, FER=${m.expense_ratio_pct?.toFixed(2) ?? "N/A"}%, Mom3M=${m.momentum_score !== null ? (m.momentum_score * 100).toFixed(1) + "%" : "N/A"}`
+  ).join("\n");
+
+  // Get recent news
+  const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const { data: recentNews } = await supabase
     .from("mpf_news")
-    .select("headline, impact_tags, sentiment, region")
-    .eq("is_high_impact", true)
-    .gte("published_at", oneDayAgo);
+    .select("headline, impact_tags, sentiment, region, is_high_impact")
+    .gte("published_at", twoDaysAgo)
+    .order("published_at", { ascending: false })
+    .limit(20);
 
-  // 5. Get ALL fund performance for comparison
-  const allFundPerf = new Map<string, number>();
-  for (const f of funds || []) {
-    const change = priceMap.get(f.id);
-    if (change !== undefined) allFundPerf.set(f.fund_code, change);
+  const newsText = (recentNews || []).map(n =>
+    `[${n.sentiment}/${n.region}${n.is_high_impact ? "/HIGH-IMPACT" : ""}] ${n.headline} (tags: ${n.impact_tags?.join(", ") || "none"})`
+  ).join("\n");
+
+  const currentPortfolioText = currentHoldings.map(h => `${h.code} (${h.name}): ${h.weight}%`).join("\n");
+  const profileText = `Profile: ${INVESTMENT_PROFILE.label}, equity target ${INVESTMENT_PROFILE.equity_pct}%`;
+
+  const availableFunds = (funds || []).map(f => `${f.fund_code} (${f.name_en})`).join(", ");
+
+  const sharedConstraints = `
+STRICT RULES:
+1. Output exactly 3 funds. Duplicates allowed (e.g., all 3 can be the same fund for 100% concentration).
+2. Weights: 0-100% in 10% increments. Total MUST = 100%.
+3. Prioritize: (1) capital preservation, (2) long-term compounding. Never chase short-term returns.
+4. 100% equity is valid. 100% cash (AIA-CON) is valid. No allocation limits.
+Available funds: ${availableFunds}
+
+Return ONLY valid JSON (no markdown):
+{ "funds": [{ "code": "AIA-XXX", "weight": 50, "reasoning": "why" }, ...], "summary": "1-2 sentence summary" }`;
+
+  // ===== STEP 1: Parallel proposals =====
+  const [quantRaw, newsRaw] = await Promise.all([
+    callGateway(
+      "You are a quantitative analyst for an MPF pension fund. Propose a 3-fund portfolio based PURELY on the metrics below. Ignore news — focus only on the numbers.",
+      `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nFUND METRICS (3Y):\n${metricsText}\n\n${sharedConstraints}`
+    ),
+    callGateway(
+      "You are a market analyst for an MPF pension fund. Propose a 3-fund portfolio based on current market conditions and recent news sentiment. Ignore quantitative metrics — focus on macro trends and risk events.",
+      `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nRECENT NEWS (48h):\n${newsText || "No recent news"}\n\n${sharedConstraints}`
+    ),
+  ]);
+
+  const quantProposal = parseJSON<PortfolioProposal>(quantRaw);
+  const newsProposal = parseJSON<PortfolioProposal>(newsRaw);
+
+  if (!quantProposal || !newsProposal) {
+    return { rebalanced: false, reason: "Failed to parse agent proposals" };
   }
 
-  // 6. AI-driven rebalance decision via OpenRouter
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  if (!openRouterKey) return { rebalanced: false, reason: "No OpenRouter API key" };
+  // ===== STEP 2: Debate =====
+  const debateRaw = await callGateway(
+    "You are a senior portfolio analyst reviewing two independent proposals for a pension fund. Identify where they agree, where they conflict, and for each conflict argue which position is stronger and why. Be decisive — don't hedge. If one agent is clearly wrong, say so.",
+    `QUANT AGENT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS AGENT PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nReturn JSON: { "agreements": ["..."], "conflicts": [{ "topic": "...", "quantPosition": "...", "newsPosition": "...", "verdict": "quant|news", "reasoning": "..." }], "recommendation": "1-2 sentence recommendation" }`
+  );
 
-  const prompt = `You are an MPF fund portfolio manager for AIA Hong Kong. Analyze the current portfolio and market conditions, then decide if rebalancing is needed.
-
-CURRENT PORTFOLIO:
-${holdings.map(h => `- ${h.fund_code} (${h.name_en}): ${h.weight}% weight, latest change: ${h.daily_change_pct?.toFixed(2) || "N/A"}%`).join("\n")}
-
-HIGH-IMPACT NEWS (last 24h):
-${(recentHighImpact || []).length === 0 ? "None" : (recentHighImpact || []).map(n => `- [${n.sentiment}/${n.region}] ${n.headline} (tags: ${n.impact_tags?.join(", ")})`).join("\n")}
-
-ALL FUND PERFORMANCE (latest monthly change):
-${Array.from(allFundPerf.entries()).sort((a, b) => b[1] - a[1]).map(([code, change]) => `- ${code}: ${change > 0 ? "+" : ""}${change.toFixed(2)}%`).join("\n")}
-
-AVAILABLE FUNDS FOR SWAPS:
-AIA-AEF (Asia Equity), AIA-EEF (Europe Equity), AIA-GCF (Greater China Equity), AIA-HEF (HK Equity), AIA-JEF (Japan Equity), AIA-NAF (North America Equity), AIA-GRF (Green/ESG), AIA-AMI (US Index), AIA-EAI (Eurasia Index), AIA-HCI (HK/China Index), AIA-WIF (World Index), AIA-GRW (Growth Mixed), AIA-BAL (Balanced), AIA-CST (Capital Stable), AIA-CHD (China/HK Dynamic), AIA-MCF (Manager's Choice), AIA-ABF (Asia Bond), AIA-GBF (Global Bond), AIA-CON (Conservative)
-
-RULES:
-- Portfolio must have 1-5 funds
-- Weights in 10% increments (10%, 20%, ... 100%)
-- Weights must total exactly 100%
-- Only rebalance if there's a clear reason (don't change for the sake of changing)
-- Consider: regional risk, performance trends, news impact, diversification
-
-Return ONLY valid JSON:
-{
-  "should_rebalance": true/false,
-  "reason": "brief explanation",
-  "new_portfolio": [
-    { "fund_code": "AIA-XXX", "weight": 30, "rationale": "why this fund at this weight" }
-  ]
-}
-
-If should_rebalance is false, new_portfolio can be empty.`;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openRouterKey}`,
-      "HTTP-Referer": "https://aia-assistant.vercel.app",
-    },
-    body: JSON.stringify({
-      model: "nvidia/nemotron-3-super-120b-a12b:free",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-    }),
-    signal: controller.signal,
-  });
-
-  clearTimeout(timeout);
-
-  if (!res.ok) return { rebalanced: false, reason: `OpenRouter error: ${res.status}` };
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content || "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-
-  if (!jsonMatch) return { rebalanced: false, reason: "AI returned invalid response" };
-
-  let decision;
-  try {
-    decision = JSON.parse(jsonMatch[0]);
-  } catch {
-    return { rebalanced: false, reason: "Failed to parse AI decision" };
+  const debate = parseJSON<DebateResult>(debateRaw);
+  if (!debate) {
+    return { rebalanced: false, reason: "Failed to parse debate" };
   }
 
-  if (!decision.should_rebalance) {
-    return { rebalanced: false, reason: decision.reason || "No rebalance needed" };
+  // ===== STEP 3: Mediator =====
+  const mediatorRaw = await callGateway(
+    `You are the chief investment officer making the final portfolio allocation. Produce the consensus 3-fund portfolio based on the debate below. ${sharedConstraints}\n\nReturn JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en": "plain English summary for the team", "summary_zh": "中文摘要", "debate_log": "Quant said X. News said Y. They agreed on Z. Final decision: ..." }`,
+    `QUANT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nDEBATE:\n${JSON.stringify(debate, null, 2)}\n\nFUND METRICS:\n${metricsText}\n\nNEWS SUMMARY:\n${newsText || "No recent news"}`
+  );
+
+  const mediator = parseJSON<MediatorResult>(mediatorRaw);
+  if (!mediator) {
+    return { rebalanced: false, reason: "Failed to parse mediator verdict" };
   }
 
-  // 7. Validate the new portfolio
-  const newPortfolio = decision.new_portfolio;
-  if (!Array.isArray(newPortfolio) || newPortfolio.length < 1 || newPortfolio.length > 5) {
-    return { rebalanced: false, reason: "AI proposed invalid portfolio size" };
+  // ===== VALIDATION =====
+  let newPortfolio = mediator.funds;
+  if (!Array.isArray(newPortfolio) || newPortfolio.length < 1) {
+    return { rebalanced: false, reason: "Mediator proposed empty portfolio" };
   }
 
-  const totalWeight = newPortfolio.reduce((s: number, p: { weight: number }) => s + p.weight, 0);
-  if (totalWeight !== 100) {
-    return { rebalanced: false, reason: `AI proposed portfolio with ${totalWeight}% total (must be 100%)` };
+  // Truncate to 3 if needed
+  if (newPortfolio.length > 3) {
+    newPortfolio = newPortfolio.sort((a, b) => b.weight - a.weight).slice(0, 3);
+    const rawTotal = newPortfolio.reduce((s, p) => s + p.weight, 0);
+    newPortfolio = newPortfolio.map(p => ({ ...p, weight: Math.round((p.weight / rawTotal) * 10) * 10 }));
+    const scaledTotal = newPortfolio.reduce((s, p) => s + p.weight, 0);
+    if (scaledTotal !== 100) newPortfolio[0].weight += 100 - scaledTotal;
   }
 
-  // Check all weights are valid increments
-  for (const p of newPortfolio) {
-    if (p.weight < 10 || p.weight > 100 || p.weight % 10 !== 0) {
-      return { rebalanced: false, reason: `Invalid weight ${p.weight}% for ${p.fund_code}` };
+  // Pad to 3 if fewer
+  if (newPortfolio.length < 3) {
+    const usedCodes = new Set(newPortfolio.map(p => p.code));
+    const fillers = ["AIA-CON", "AIA-ABF", "AIA-GBF"].filter(c => !usedCodes.has(c));
+    while (newPortfolio.length < 3 && fillers.length > 0) {
+      newPortfolio.push({ code: fillers.shift()!, weight: 0 });
     }
   }
 
-  // 8. Apply the rebalance
-  const fundCodeToId = new Map((funds || []).map(f => [f.fund_code, f.id]));
+  const totalWeight = newPortfolio.reduce((s, p) => s + p.weight, 0);
+  if (totalWeight !== 100) {
+    return { rebalanced: false, reason: `Portfolio total ${totalWeight}% (must be 100%)` };
+  }
 
-  // Delete old portfolio
+  for (const p of newPortfolio) {
+    if (p.weight < 0 || p.weight > 100 || p.weight % 10 !== 0) {
+      return { rebalanced: false, reason: `Invalid weight ${p.weight}% for ${p.code}` };
+    }
+  }
+
+  const activePortfolio = newPortfolio.filter(p => p.weight > 0);
+  if (activePortfolio.length === 0) {
+    return { rebalanced: false, reason: "All funds at 0%" };
+  }
+
+  // ===== APPLY =====
   await supabase.from("mpf_reference_portfolio").delete().neq("fund_id", "00000000-0000-0000-0000-000000000000");
 
-  // Insert new portfolio
-  for (const p of newPortfolio) {
-    const fund_id = fundCodeToId.get(p.fund_code);
+  for (const p of activePortfolio) {
+    const fund_id = fundCodeToId.get(p.code);
     if (!fund_id) continue;
     await supabase.from("mpf_reference_portfolio").insert({
       fund_id,
       weight: p.weight,
-      note: p.rationale,
-      updated_by: "auto-rebalancer",
+      note: `Debate consensus`,
+      updated_by: "debate-rebalancer",
     });
   }
 
-  // 9. Log the rebalance as an insight
+  // Full debate log
+  const fullDebateLog = [
+    "## Quant Agent",
+    quantProposal.summary,
+    quantProposal.funds.map(f => `- ${f.code}: ${f.weight}% — ${f.reasoning}`).join("\n"),
+    "",
+    "## News Agent",
+    newsProposal.summary,
+    newsProposal.funds.map(f => `- ${f.code}: ${f.weight}% — ${f.reasoning}`).join("\n"),
+    "",
+    "## Debate",
+    `Agreements: ${debate.agreements.join("; ")}`,
+    ...debate.conflicts.map(c => `Conflict: ${c.topic} — Verdict: ${c.verdict} — ${c.reasoning}`),
+    "",
+    "## Final Decision",
+    mediator.debate_log,
+  ].join("\n");
+
   await supabase.from("mpf_insights").insert({
-    type: "alert",
-    trigger: "portfolio_rebalance",
-    content_en: `Portfolio rebalanced: ${decision.reason}\n\nNew allocation:\n${newPortfolio.map((p: { fund_code: string; weight: number; rationale: string }) => `- ${p.fund_code}: ${p.weight}% — ${p.rationale}`).join("\n")}`,
-    content_zh: `組合已重新調配：${decision.reason}`,
+    type: "rebalance_debate",
+    trigger: "debate_rebalance",
+    content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
+    content_zh: mediator.summary_zh,
+    fund_categories: [...new Set(activePortfolio.map(p => {
+      const fund = funds?.find(f => f.fund_code === p.code);
+      return fund?.category || "unknown";
+    }))],
     status: "completed",
+    model: MODEL,
   });
 
   return {
     rebalanced: true,
-    reason: decision.reason,
-    changes: newPortfolio.map((p: { fund_code: string; weight: number; rationale: string }) => ({
-      to: p.fund_code,
-      weight: p.weight,
-      rationale: p.rationale,
-    })),
+    reason: mediator.summary_en,
+    debate_log: fullDebateLog,
   };
 }
