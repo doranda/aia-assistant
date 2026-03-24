@@ -2,8 +2,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scrapeAAStocksPrices, upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
+import { scrapeAIAPerformance, upsertFundReturns } from "@/lib/mpf/scrapers/aia-api";
 import { PRICE_OUTLIER_THRESHOLD_PCT } from "@/lib/mpf/constants";
 import { processPendingAlerts } from "@/lib/mpf/alerts";
+import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
+import { getConsecutiveFailures } from "@/lib/mpf/health";
 
 export const maxDuration = 60;
 
@@ -24,9 +27,43 @@ export async function GET(req: NextRequest) {
     .select()
     .single();
 
+  let source = "unknown";
+  let count = 0;
+
   try {
-    const prices = await scrapeAAStocksPrices();
-    const count = await upsertPrices(prices);
+    // PRIMARY: AIA JSON API — richer data (multi-period returns + calendar years)
+    let aiaSuccess = false;
+    try {
+      const aiaData = await scrapeAIAPerformance();
+      count = await upsertFundReturns(aiaData);
+      source = "aia_api";
+      aiaSuccess = true;
+      console.log(`[prices-cron] AIA API succeeded: ${count} funds upserted`);
+
+      // Stale source detection
+      const now = new Date();
+      const hkTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Hong_Kong" }));
+      if (hkTime.getHours() >= 19) {
+        const today = hkTime.toISOString().split("T")[0];
+        if (aiaData.asAtDate && aiaData.asAtDate < today) {
+          await sendDiscordAlert({
+            title: "\u26a0\ufe0f MPF Care \u2014 Stale Price Data",
+            description: `AIA API returned data from ${aiaData.asAtDate} (expected ${today})`,
+            color: COLORS.yellow,
+          });
+        }
+      }
+    } catch (aiaErr) {
+      console.error("[prices-cron] AIA API failed, falling back to MPFA Excel:", aiaErr);
+    }
+
+    // FALLBACK: MPFA Excel — used only if AIA API failed
+    if (!aiaSuccess) {
+      const prices = await scrapeAAStocksPrices();
+      count = await upsertPrices(prices);
+      source = "mpfa";
+      console.log(`[prices-cron] MPFA fallback succeeded: ${count} records upserted`);
+    }
 
     // Update scraper run
     await supabase
@@ -35,6 +72,8 @@ export async function GET(req: NextRequest) {
         status: "success",
         records_processed: count,
         duration_ms: Date.now() - startTime,
+        // Store which source was used in error_message field (re-purposed for metadata)
+        error_message: `source:${source}`,
       })
       .eq("id", run?.id);
 
@@ -62,7 +101,7 @@ export async function GET(req: NextRequest) {
     }
 
     await processPendingAlerts();
-    return NextResponse.json({ ok: true, count, outliers: outlierFunds?.length || 0 });
+    return NextResponse.json({ ok: true, count, source, outliers: outlierFunds?.length || 0 });
   } catch (error) {
     await supabase
       .from("scraper_runs")
@@ -72,6 +111,19 @@ export async function GET(req: NextRequest) {
         duration_ms: Date.now() - startTime,
       })
       .eq("id", run?.id);
+
+    // Discord failure alert
+    const failures = await getConsecutiveFailures(supabase, "fund_prices");
+    const isEscalated = failures >= 2;
+    await sendDiscordAlert({
+      title: `${isEscalated ? "\ud83d\udd34" : "\u274c"} MPF Care \u2014 Price Update Failed`,
+      description: [
+        `**Error:** ${sanitizeError(error)}`,
+        `**Consecutive failures:** ${failures}`,
+        `**Duration:** ${Date.now() - startTime}ms`,
+      ].join("\n"),
+      color: COLORS.red,
+    });
 
     return NextResponse.json({ error: "Scrape failed" }, { status: 500 });
   }

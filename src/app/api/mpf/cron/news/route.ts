@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
+import { getConsecutiveFailures } from "@/lib/mpf/health";
 
 export const maxDuration = 60;
 
@@ -25,6 +27,7 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient();
   let classified = 0, highImpact = 0, rebResult = "pending";
 
+  try {
   // CLASSIFY
   try {
     const { data: articles } = await supabase.from("mpf_news").select("id, headline")
@@ -96,6 +99,27 @@ export async function GET(req: NextRequest) {
         if (np.length>=1 && np.length<=5 && tw===100) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const c2i = new Map((funds||[]).map((f:any)=>[f.fund_code,f.id]));
+
+          // SNAPSHOT current portfolio into rebalance_history BEFORE deleting
+          try {
+            const { data: currentPf } = await supabase.from("mpf_reference_portfolio").select("fund_id, weight, note");
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const i2c = new Map((funds||[]).map((f:any)=>[f.id,f.fund_code]));
+            const portfolioSnapshot = (currentPf||[]).map((row:{fund_id:string;weight:number;note:string|null})=>({
+              fund_code: i2c.get(row.fund_id) ?? row.fund_id,
+              fund_id: row.fund_id,
+              weight: row.weight,
+              note: row.note,
+            }));
+            if (portfolioSnapshot.length > 0) {
+              await supabase.from("mpf_rebalance_history").insert({
+                trigger: "portfolio_rebalance",
+                reason: dec.reason,
+                portfolio: portfolioSnapshot,
+              });
+            }
+          } catch (snapErr) { console.error("[news-cron] rebalance snapshot failed:", snapErr); }
+
           await supabase.from("mpf_reference_portfolio").delete().neq("fund_id","00000000-0000-0000-0000-000000000000");
           for (const p of np) { const fid=c2i.get(p.fund_code); if(fid) await supabase.from("mpf_reference_portfolio").insert({fund_id:fid,weight:p.weight,note:p.rationale,updated_by:"auto"}); }
           await supabase.from("mpf_insights").insert({type:"alert",trigger:"portfolio_rebalance",status:"completed",content_en:`Rebalanced: ${dec.reason}\n${np.map((p:{fund_code:string;weight:number;rationale:string})=>`${p.fund_code}:${p.weight}% - ${p.rationale}`).join("\n")}`});
@@ -107,4 +131,28 @@ export async function GET(req: NextRequest) {
 
   await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: classified, duration_ms: Date.now() - t0 });
   return NextResponse.json({ ok: true, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
+  } catch (error) {
+    await supabase
+      .from("scraper_runs")
+      .insert({
+        scraper_name: "news_pipeline",
+        status: "failed",
+        error_message: error instanceof Error ? error.message : "Unknown error",
+        duration_ms: Date.now() - t0,
+      });
+
+    const failures = await getConsecutiveFailures(supabase, "news_pipeline");
+    const isEscalated = failures >= 2;
+    await sendDiscordAlert({
+      title: `${isEscalated ? "\ud83d\udd34" : "\u274c"} MPF Care \u2014 News Pipeline Failed`,
+      description: [
+        `**Error:** ${sanitizeError(error)}`,
+        `**Consecutive failures:** ${failures}`,
+        `**Duration:** ${Date.now() - t0}ms`,
+      ].join("\n"),
+      color: COLORS.red,
+    });
+
+    return NextResponse.json({ error: "News pipeline failed" }, { status: 500 });
+  }
 }
