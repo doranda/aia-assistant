@@ -1,6 +1,7 @@
 // src/app/(app)/mpf-care/page.tsx
 import { createClient } from "@/lib/supabase/server";
 import { PortfolioReference } from "@/components/mpf/portfolio-reference";
+import { DebateLog } from "@/components/mpf/debate-log";
 import { FundHeatmap } from "@/components/mpf/fund-heatmap";
 import { TopMovers } from "@/components/mpf/top-movers";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
@@ -115,6 +116,16 @@ async function getOverviewData() {
     .limit(1)
     .single();
 
+  // Get latest debate log
+  const { data: latestDebate } = await supabase
+    .from("mpf_insights")
+    .select("content_en, content_zh, created_at")
+    .eq("type", "rebalance_debate")
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
   // Last scraper run
   const { data: lastRun } = await supabase
     .from("scraper_runs")
@@ -130,13 +141,14 @@ async function getOverviewData() {
     refUpdatedAt,
     news: (news || []) as MpfNews[],
     latestInsight: latestInsight as MpfInsight | null,
+    latestDebate: latestDebate as { content_en: string | null; content_zh: string | null; created_at: string } | null,
     lastRun,
     priceDate,
   };
 }
 
 export default async function MpfCarePage() {
-  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, lastRun, priceDate } = await getOverviewData();
+  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, latestDebate, lastRun, priceDate } = await getOverviewData();
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
@@ -196,6 +208,16 @@ export default async function MpfCarePage() {
           updatedAt={refUpdatedAt}
         />
       </div>
+
+      {/* Debate Log — Why this allocation */}
+      {latestDebate && (
+        <DebateLog
+          summaryEn={latestDebate.content_en || ""}
+          summaryZh={latestDebate.content_zh || ""}
+          fullLog={latestDebate.content_en?.split("---").slice(1).join("---").trim() || ""}
+          createdAt={latestDebate.created_at}
+        />
+      )}
 
       {/* Top Movers — split into Gainers and Losers */}
       <section aria-labelledby="top-movers-heading" className="mb-16">
