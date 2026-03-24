@@ -91,15 +91,18 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   // Daily cap: max 3 rebalances per day
   const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const { count: todayCount } = await supabase
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayISO = todayStart.toISOString();
+  const { data: todayRebalances } = await supabase
     .from("mpf_insights")
-    .select("id", { count: "exact", head: true })
-    .in("type", ["alert", "rebalance_debate"])
-    .in("trigger", ["portfolio_rebalance", "debate_rebalance"])
-    .gte("created_at", todayStart.toISOString());
+    .select("id")
+    .or("type.eq.alert,type.eq.rebalance_debate")
+    .or("trigger.eq.portfolio_rebalance,trigger.eq.debate_rebalance")
+    .gte("created_at", todayISO);
 
-  if ((todayCount || 0) >= 3) {
+  const todayCount = todayRebalances?.length || 0;
+  console.log(`[debate-rebalancer] Daily cap check: ${todayCount} rebalances today (since ${todayISO}), data: ${JSON.stringify(todayRebalances?.map(r => r.id).slice(0, 3))}`);
+  if (todayCount >= 3) {
     return { rebalanced: false, reason: "Daily rebalance cap reached (3/day)" };
   }
 
@@ -108,8 +111,8 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
     const { data: lastRebalance } = await supabase
       .from("mpf_insights")
       .select("created_at")
-      .in("type", ["alert", "rebalance_debate"])
-      .in("trigger", ["portfolio_rebalance", "debate_rebalance"])
+      .or("type.eq.alert,type.eq.rebalance_debate")
+      .or("trigger.eq.portfolio_rebalance,trigger.eq.debate_rebalance")
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
