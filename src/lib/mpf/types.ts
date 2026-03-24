@@ -14,9 +14,9 @@ export type FundCategory =
 export type NewsRegion = "global" | "asia" | "hk" | "china";
 export type NewsCategory = "markets" | "geopolitical" | "policy" | "macro";
 export type Sentiment = "positive" | "negative" | "neutral";
-export type InsightType = "weekly" | "alert" | "on_demand";
+export type InsightType = "weekly" | "alert" | "on_demand" | "rebalance_debate";
 export type InsightStatus = "pending" | "generating" | "completed" | "failed";
-export type PriceSource = "mpfa" | "aastocks" | "manual";
+export type PriceSource = "mpfa" | "aastocks" | "manual" | "aia_api" | "brave_search";
 
 export interface MpfFund {
   id: string;
@@ -87,6 +87,23 @@ export interface ScraperRun {
   created_at: string;
 }
 
+export type MetricPeriod = "1y" | "3y" | "5y" | "since_launch";
+
+export interface FundMetrics {
+  id: string;
+  fund_id: string;
+  fund_code: string;
+  period: MetricPeriod;
+  sharpe_ratio: number | null;
+  sortino_ratio: number | null;
+  max_drawdown_pct: number | null;
+  annualized_return_pct: number | null;
+  annualized_volatility_pct: number | null;
+  expense_ratio_pct: number | null;
+  momentum_score: number | null;
+  computed_at: string;
+}
+
 // View models for UI
 export interface FundWithLatestPrice extends MpfFund {
   latest_nav: number | null;
@@ -107,8 +124,13 @@ export interface FundPerformance {
     "1m": number | null;
     "3m": number | null;
     "1y": number | null;
+    "3y": number | null;
     "5y": number | null;
+    "10y": number | null;
+    "ytd": number | null;
+    "since_launch": number | null;
   };
+  calendar_year_returns?: Record<string, number | null>;
 }
 
 export interface NewsWithFunds extends MpfNews {
