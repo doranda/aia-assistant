@@ -5,7 +5,7 @@ import { FundHeatmap } from "@/components/mpf/fund-heatmap";
 import { TopMovers } from "@/components/mpf/top-movers";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import type { FundWithLatestPrice, MpfNews, MpfInsight } from "@/lib/mpf/types";
-import { TrendingUp, Newspaper, Brain } from "lucide-react";
+import { TrendingUp, Newspaper, Brain, Activity } from "lucide-react";
 
 async function getOverviewData() {
   const supabase = await createClient();
@@ -155,6 +155,31 @@ export default async function MpfCarePage() {
       </header>
 
       <DisclaimerBanner />
+
+      {/* Sub-navigation */}
+      <nav aria-label="MPF Care sections" className="mt-8 flex items-center gap-4">
+        <a
+          href="/mpf-care/news"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-md transition-colors"
+        >
+          <Newspaper className="w-3.5 h-3.5" />
+          News
+        </a>
+        <a
+          href="/mpf-care/insights"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-md transition-colors"
+        >
+          <Brain className="w-3.5 h-3.5" />
+          Insights
+        </a>
+        <a
+          href="/mpf-care/health"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-md transition-colors"
+        >
+          <Activity className="w-3.5 h-3.5" />
+          Health
+        </a>
+      </nav>
 
       {/* Reference Portfolio — first thing users see */}
       <div className="mt-12">
