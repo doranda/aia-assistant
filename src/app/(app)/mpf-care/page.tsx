@@ -5,7 +5,7 @@ import { FundHeatmap } from "@/components/mpf/fund-heatmap";
 import { TopMovers } from "@/components/mpf/top-movers";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import type { FundWithLatestPrice, MpfNews, MpfInsight } from "@/lib/mpf/types";
-import { TrendingUp, Newspaper, Brain, Activity } from "lucide-react";
+import { TrendingUp, Newspaper, Brain, Activity, BarChart3 } from "lucide-react";
 
 async function getOverviewData() {
   const supabase = await createClient();
@@ -144,10 +144,10 @@ export default async function MpfCarePage() {
         <h1 className="text-[clamp(2rem,4vw,3rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.1]">
           MPF Care
         </h1>
-        <p className="text-sm text-zinc-500 mt-2 font-mono">
+        <p className="text-sm text-zinc-300 mt-2 font-mono">
           AIA MPF Care Profile — Fund performance & insights
           {lastRun && (
-            <span className="ml-3 text-zinc-600">
+            <span className="ml-3 text-zinc-400">
               Last updated: {new Date(lastRun.run_at).toLocaleDateString("en-HK")}
             </span>
           )}
@@ -160,24 +160,31 @@ export default async function MpfCarePage() {
       <nav aria-label="MPF Care sections" className="mt-8 flex items-center gap-4">
         <a
           href="/mpf-care/news"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
         >
           <Newspaper className="w-3.5 h-3.5" />
           News
         </a>
         <a
           href="/mpf-care/insights"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
         >
           <Brain className="w-3.5 h-3.5" />
           Insights
         </a>
         <a
           href="/mpf-care/health"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
         >
           <Activity className="w-3.5 h-3.5" />
           Health
+        </a>
+        <a
+          href="/mpf-care/screener"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          Screener
         </a>
       </nav>
 
@@ -193,8 +200,8 @@ export default async function MpfCarePage() {
       {/* Top Movers — split into Gainers and Losers */}
       <section aria-labelledby="top-movers-heading" className="mb-16">
         <div className="flex items-center gap-2 mb-6">
-          <TrendingUp className="w-4 h-4 text-zinc-600" />
-          <h2 id="top-movers-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
+          <TrendingUp className="w-4 h-4 text-zinc-400" />
+          <h2 id="top-movers-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
             Top Movers — {priceDate}
           </h2>
         </div>
@@ -203,7 +210,7 @@ export default async function MpfCarePage() {
 
       {/* Fund Heatmap */}
       <section aria-labelledby="heatmap-heading" className="mb-16">
-        <h2 id="heatmap-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-6">
+        <h2 id="heatmap-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300 mb-6">
           All Funds
         </h2>
         <FundHeatmap funds={fundsWithPrices} />
@@ -215,8 +222,8 @@ export default async function MpfCarePage() {
         <section aria-labelledby="news-heading">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <Newspaper className="w-4 h-4 text-zinc-600" />
-              <h2 id="news-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
+              <Newspaper className="w-4 h-4 text-zinc-400" />
+              <h2 id="news-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
                 Latest News
               </h2>
             </div>
@@ -225,7 +232,7 @@ export default async function MpfCarePage() {
             </a>
           </div>
           {news.length === 0 ? (
-            <p className="text-sm text-zinc-500">No news collected yet.</p>
+            <p className="text-sm text-zinc-300">No news collected yet.</p>
           ) : (
             <ol className="space-y-0 divide-y divide-zinc-800/60">
               {news.map((n) => (
@@ -239,10 +246,10 @@ export default async function MpfCarePage() {
                     {n.headline}
                   </a>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[10px] font-mono text-zinc-600">{n.source}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">{n.source}</span>
                     <span className={`text-[10px] font-mono ${
                       n.sentiment === "positive" ? "text-emerald-500" :
-                      n.sentiment === "negative" ? "text-red-500" : "text-zinc-600"
+                      n.sentiment === "negative" ? "text-red-500" : "text-zinc-400"
                     }`}>
                       {n.sentiment}
                     </span>
@@ -260,8 +267,8 @@ export default async function MpfCarePage() {
         <section aria-labelledby="insight-heading">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4 text-zinc-600" />
-              <h2 id="insight-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500">
+              <Brain className="w-4 h-4 text-zinc-400" />
+              <h2 id="insight-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
                 Latest Profile
               </h2>
             </div>
@@ -274,7 +281,7 @@ export default async function MpfCarePage() {
               {latestInsight.content_en}
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">No insights generated yet.</p>
+            <p className="text-sm text-zinc-300">No insights generated yet.</p>
           )}
         </section>
       </div>
