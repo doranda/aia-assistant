@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FundChart } from "@/components/mpf/fund-chart";
+import { RiskMetrics } from "@/components/mpf/risk-metrics";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
-import type { MpfFund, MpfPrice, MpfNews } from "@/lib/mpf/types";
+import type { MpfFund, MpfPrice, MpfNews, FundMetrics, MetricPeriod } from "@/lib/mpf/types";
 import { FUND_CATEGORY_LABELS } from "@/lib/mpf/constants";
 import type { FundCategory } from "@/lib/mpf/types";
 
@@ -38,6 +39,19 @@ export default async function FundExplorerPage({
     .order("created_at", { ascending: false })
     .limit(10);
 
+  // Get risk metrics for all periods
+  const { data: allMetrics } = await supabase
+    .from("mpf_fund_metrics")
+    .select("*")
+    .eq("fund_id", fund.id);
+
+  const metricsMap: Record<MetricPeriod, FundMetrics | null> = {
+    "1y": null, "3y": null, "5y": null, "since_launch": null,
+  };
+  for (const m of allMetrics || []) {
+    metricsMap[m.period as MetricPeriod] = m as FundMetrics;
+  }
+
   // Calculate returns
   const priceList = prices || [];
   const latest = priceList[priceList.length - 1];
@@ -64,7 +78,7 @@ export default async function FundExplorerPage({
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
       <header className="mb-12">
         <div className="flex items-center gap-3 mb-2">
-          <a href="/mpf-care" className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors">
+          <a href="/mpf-care" className="text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors">
             ← MPF Care
           </a>
         </div>
@@ -72,8 +86,8 @@ export default async function FundExplorerPage({
           {fund.name_en}
         </h1>
         <div className="flex items-center gap-4 mt-2">
-          <span className="text-[12px] font-mono text-zinc-500">{fund.fund_code}</span>
-          <span className="text-[12px] text-zinc-500">{FUND_CATEGORY_LABELS[fund.category as FundCategory]}</span>
+          <span className="text-[12px] font-mono text-zinc-300">{fund.fund_code}</span>
+          <span className="text-[12px] text-zinc-300">{FUND_CATEGORY_LABELS[fund.category as FundCategory]}</span>
           <span className="text-[12px] text-amber-500" aria-label={`Risk rating ${fund.risk_rating} of 5`}>{riskStars}</span>
         </div>
         {latest && (
@@ -81,7 +95,7 @@ export default async function FundExplorerPage({
             <span className="text-[clamp(1.5rem,2.5vw,2rem)] font-semibold font-mono text-zinc-50 tabular-nums">
               ${latest.nav.toFixed(4)}
             </span>
-            <span className="text-[12px] font-mono text-zinc-600 ml-2">NAV as of {latest.date}</span>
+            <span className="text-[12px] font-mono text-zinc-400 ml-2">NAV as of {latest.date}</span>
           </div>
         )}
       </header>
@@ -91,17 +105,22 @@ export default async function FundExplorerPage({
         <FundChart prices={priceList.map((p) => ({ date: p.date, nav: p.nav }))} />
       </section>
 
+      {/* Risk Metrics */}
+      <div className="mb-16">
+        <RiskMetrics metrics={metricsMap} />
+      </div>
+
       {/* Returns Table */}
       <section aria-labelledby="returns-heading" className="mb-16">
-        <h2 id="returns-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-4">
+        <h2 id="returns-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300 mb-4">
           Performance
         </h2>
         <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
           {Object.entries(returns).map(([period, value]) => (
             <div key={period}>
-              <div className="text-[11px] font-mono text-zinc-600">{period}</div>
+              <div className="text-[11px] font-mono text-zinc-400">{period}</div>
               <div className={`text-[16px] font-mono font-semibold tabular-nums ${
-                value === null ? "text-zinc-600" :
+                value === null ? "text-zinc-400" :
                 value > 0 ? "text-emerald-400" : "text-red-400"
               }`}>
                 {value === null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`}
@@ -113,11 +132,11 @@ export default async function FundExplorerPage({
 
       {/* Correlated News */}
       <section aria-labelledby="correlated-news-heading" className="mb-12">
-        <h2 id="correlated-news-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-4">
+        <h2 id="correlated-news-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300 mb-4">
           Correlated News
         </h2>
         {(!correlatedNews || correlatedNews.length === 0) ? (
-          <p className="text-sm text-zinc-500">No correlated news events yet.</p>
+          <p className="text-sm text-zinc-300">No correlated news events yet.</p>
         ) : (
           <ol className="space-y-0 divide-y divide-zinc-800/60">
             {correlatedNews.map((item, i) => {
@@ -133,7 +152,7 @@ export default async function FundExplorerPage({
                     {news?.headline}
                   </a>
                   {item.impact_note && (
-                    <p className="text-[12px] text-zinc-500 mt-1">{item.impact_note}</p>
+                    <p className="text-[12px] text-zinc-300 mt-1">{item.impact_note}</p>
                   )}
                 </li>
               );
