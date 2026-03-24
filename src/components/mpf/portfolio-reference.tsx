@@ -27,10 +27,10 @@ function formatReturn(val: number | null): string {
 }
 
 function returnColor(val: number | null): string {
-  if (val === null) return "text-zinc-600";
+  if (val === null) return "text-zinc-400";
   if (val > 0) return "text-emerald-400";
   if (val < 0) return "text-red-400";
-  return "text-zinc-500";
+  return "text-zinc-300";
 }
 
 export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioReferenceProps) {
@@ -49,40 +49,40 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
       <div className="flex items-center justify-between mb-2">
         <h2
           id="portfolio-ref-heading"
-          className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500"
+          className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300"
         >
           Reference Portfolio
         </h2>
-        <span className="text-[10px] font-mono text-zinc-600">
-          Updated {new Date(updatedAt).toLocaleDateString("en-HK")}
+        <span className="text-[10px] font-mono text-zinc-400">
+          Last rebalanced {new Date(updatedAt).toLocaleDateString("en-HK", { day: "numeric", month: "short", year: "numeric" })}
         </span>
       </div>
-      <p className="text-[11px] text-zinc-600 mb-6 font-mono">
-        AI-recommended allocation based on current market trends and news analysis
+      <p className="text-[11px] text-zinc-400 mb-6 font-mono">
+        Dual-agent debate consensus — Quant metrics vs market news
       </p>
 
       {/* Portfolio performance summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 mb-1">Latest</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">Latest</div>
           <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedDaily))}>
             {formatReturn(weightedDaily)}
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 mb-1">MTD</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">MTD</div>
           <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedMtd))}>
             {formatReturn(weightedMtd)}
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 mb-1">YTD</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">YTD</div>
           <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedYtd))}>
             {formatReturn(weightedYtd)}
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 mb-1">1Y</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">1Y</div>
           <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedY1))}>
             {formatReturn(weightedY1)}
           </div>
@@ -93,12 +93,12 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
       <div className="border border-zinc-800/60 rounded-lg overflow-hidden">
         {/* Header */}
         <div className="grid grid-cols-[1fr_60px_70px_70px_70px_70px] bg-zinc-900/80 px-4 py-2 border-b border-zinc-800/60">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600">Fund</span>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 text-right">Weight</span>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 text-right">Latest</span>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 text-right">MTD</span>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 text-right">YTD</span>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600 text-right">1Y</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Fund</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 text-right">Weight</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 text-right">Latest</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 text-right">MTD</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 text-right">YTD</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 text-right">1Y</span>
         </div>
 
         {/* Rows */}
@@ -109,7 +109,7 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
           >
             <div>
               <span className="text-[13px] text-zinc-300">{fund.name_en}</span>
-              <span className="text-[10px] text-zinc-600 ml-2 font-mono">{fund.fund_code}</span>
+              <span className="text-[10px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
             </div>
             <span className="text-[13px] font-mono font-semibold text-zinc-300 text-right">
               {fund.weight}%
@@ -151,8 +151,8 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
       {/* Rationale notes */}
       <div className="mt-4 space-y-1">
         {funds.filter(f => f.note).map((fund) => (
-          <p key={fund.fund_code} className="text-[11px] text-zinc-600 font-mono">
-            <span className="text-zinc-500">{fund.fund_code}</span> — {fund.note}
+          <p key={fund.fund_code} className="text-[11px] text-zinc-400 font-mono">
+            <span className="text-zinc-300">{fund.fund_code}</span> — {fund.note}
           </p>
         ))}
       </div>
