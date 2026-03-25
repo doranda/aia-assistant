@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchNews } from "@/lib/mpf/scrapers/news-collector";
+import { evaluateAndRebalance } from "@/lib/mpf/rebalancer";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
 import { getConsecutiveFailures } from "@/lib/mpf/health";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
 const MODEL = "google/gemini-2.0-flash";
@@ -25,10 +27,18 @@ export async function GET(req: NextRequest) {
 
   const t0 = Date.now();
   const supabase = createAdminClient();
-  let classified = 0, highImpact = 0, rebResult = "pending";
+  let fetched = 0, classified = 0, highImpact = 0, rebResult = "pending";
 
   try {
-  // CLASSIFY
+  // STEP 1: FETCH NEWS from Google News RSS
+  try {
+    fetched = await fetchNews();
+    console.log(`[news-cron] Fetched ${fetched} new articles`);
+  } catch (fetchErr) {
+    console.error("[news-cron] fetchNews failed:", fetchErr);
+  }
+
+  // STEP 2: CLASSIFY unclassified articles
   try {
     const { data: articles } = await supabase.from("mpf_news").select("id, headline")
       .eq("impact_tags", "{}").order("published_at", { ascending: false }).limit(5);
@@ -47,90 +57,58 @@ export async function GET(req: NextRequest) {
           await supabase.from("mpf_news").update({ sentiment: p.sentiment||"neutral", category: p.category||"markets", region: p.region||"global", impact_tags: p.impact_tags||[], is_high_impact: !!p.is_high_impact }).eq("id", a.id);
           classified++; if (p.is_high_impact) highImpact++;
         }
-      } catch { /* skip */ }
+      } catch { /* skip single article */ }
     }
-  } catch { /* skip */ }
+  } catch { /* skip classification step */ }
 
-  // REBALANCE CHECK
+  // STEP 2.5: CORRELATE news to funds via impact_tags → fund code mapping
   try {
-    // Rate limit: skip if rebalanced within 7 days (unless high-impact news)
-    if (highImpact === 0) {
-      const { data: lastRebs } = await supabase.from("mpf_insights").select("created_at")
-        .eq("trigger", "portfolio_rebalance").order("created_at", { ascending: false }).limit(1);
-      const lastReb = lastRebs?.[0];
-      if (lastReb && (Date.now() - new Date(lastReb.created_at).getTime()) < 7 * 86400000) {
-        rebResult = "skipped — last rebalance < 7 days ago";
-        // Skip to end
-        await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: classified, duration_ms: Date.now() - t0 });
-        return NextResponse.json({ ok: true, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
+    const { data: uncorrelated } = await supabase
+      .from("mpf_news")
+      .select("id, impact_tags")
+      .not("impact_tags", "eq", "{}")
+      .gte("published_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+      .limit(20);
+
+    const { IMPACT_TAG_TO_FUNDS } = await import("@/lib/mpf/constants");
+    const { data: allFunds } = await supabase.from("mpf_funds").select("id, fund_code").eq("is_active", true);
+    const codeToId = new Map((allFunds || []).map(f => [f.fund_code, f.id]));
+
+    for (const article of uncorrelated || []) {
+      const fundCodes = new Set<string>();
+      for (const tag of article.impact_tags || []) {
+        for (const code of IMPACT_TAG_TO_FUNDS[tag] || []) {
+          fundCodes.add(code);
+        }
+      }
+
+      for (const code of fundCodes) {
+        const fundId = codeToId.get(code);
+        if (!fundId) continue;
+
+        // Upsert to avoid duplicates
+        await supabase.from("mpf_fund_news").upsert(
+          { fund_id: fundId, news_id: article.id, impact_note: (article.impact_tags || []).join(", ") },
+          { onConflict: "fund_id,news_id", ignoreDuplicates: true }
+        ).then(() => {}).catch(() => {}); // Ignore if no unique constraint
       }
     }
+  } catch (corrErr) {
+    console.error("[news-cron] Correlation step failed:", corrErr);
+  }
 
-    const { data: pf } = await supabase.from("mpf_reference_portfolio").select("fund_id, weight");
-    const { data: funds } = await supabase.from("mpf_funds").select("id, fund_code, name_en");
-    const { data: prices } = await supabase.from("mpf_prices").select("fund_id, daily_change_pct").order("date", { ascending: false }).limit(50);
+  // STEP 3: REBALANCE — only if high-impact news found (saves time on most runs)
+  if (highImpact > 0) {
+    try {
+      const result = await evaluateAndRebalance(highImpact);
+      rebResult = result.rebalanced ? `rebalanced: ${result.reason}` : result.reason;
+    } catch (e) { rebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
+  } else {
+    rebResult = "skipped — no high-impact news";
+  }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const fm = new Map((funds||[]).map((f:any)=>[f.id,f]));
-    const pm = new Map<string,number>();
-    for (const p of prices||[]) { if (!pm.has(p.fund_id)) pm.set(p.fund_id, p.daily_change_pct||0); }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cur = (pf||[]).map((h:any)=>{ const f=fm.get(h.fund_id); return `${f?.fund_code}:${h.weight}%`; }).join(", ");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const perf = (funds||[]).filter((f:any)=>pm.has(f.id)).map((f:any)=>`${f.fund_code}:${(pm.get(f.id)||0).toFixed(1)}%`).join(", ");
-
-    const { data: hiNews } = await supabase.from("mpf_news").select("headline, sentiment")
-      .eq("is_high_impact", true).gte("published_at", new Date(Date.now() - 86400000).toISOString());
-
-    const r = await fetch(GATEWAY_URL, {
-      method: "POST",
-      headers: gatewayHeaders(),
-      body: JSON.stringify({ model: MODEL, messages: [{ role: "user", content: `MPF portfolio manager for AIA Hong Kong. Current portfolio: ${cur}. Recent high-impact news: ${(hiNews||[]).map(n=>`[${n.sentiment}] ${n.headline}`).join("; ")||"None"}. Fund performance: ${perf}. Should this portfolio be rebalanced? Rules: 1-5 funds, weights in 10% increments totaling 100%. Available: AIA-AEF,AIA-EEF,AIA-GCF,AIA-NAF,AIA-GRF,AIA-AMI,AIA-EAI,AIA-HCI,AIA-WIF,AIA-GRW,AIA-BAL,AIA-CST,AIA-CHD,AIA-MCF,AIA-ABF,AIA-GBF,AIA-CON. Return ONLY JSON: {"should_rebalance":false,"reason":"why","new_portfolio":[{"fund_code":"AIA-XXX","weight":30,"rationale":"why"}]}` }], temperature: 0.2 }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const d = await r.json();
-    const jm = (d.choices?.[0]?.message?.content||"").match(/\{[\s\S]*\}/);
-    if (jm) {
-      const dec = JSON.parse(jm[0]);
-      if (dec.should_rebalance && Array.isArray(dec.new_portfolio)) {
-        const np = dec.new_portfolio;
-        const tw = np.reduce((s:number,p:{weight:number})=>s+p.weight,0);
-        if (np.length>=1 && np.length<=5 && tw===100) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const c2i = new Map((funds||[]).map((f:any)=>[f.fund_code,f.id]));
-
-          // SNAPSHOT current portfolio into rebalance_history BEFORE deleting
-          try {
-            const { data: currentPf } = await supabase.from("mpf_reference_portfolio").select("fund_id, weight, note");
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const i2c = new Map((funds||[]).map((f:any)=>[f.id,f.fund_code]));
-            const portfolioSnapshot = (currentPf||[]).map((row:{fund_id:string;weight:number;note:string|null})=>({
-              fund_code: i2c.get(row.fund_id) ?? row.fund_id,
-              fund_id: row.fund_id,
-              weight: row.weight,
-              note: row.note,
-            }));
-            if (portfolioSnapshot.length > 0) {
-              await supabase.from("mpf_rebalance_history").insert({
-                trigger: "portfolio_rebalance",
-                reason: dec.reason,
-                portfolio: portfolioSnapshot,
-              });
-            }
-          } catch (snapErr) { console.error("[news-cron] rebalance snapshot failed:", snapErr); }
-
-          await supabase.from("mpf_reference_portfolio").delete().neq("fund_id","00000000-0000-0000-0000-000000000000");
-          for (const p of np) { const fid=c2i.get(p.fund_code); if(fid) await supabase.from("mpf_reference_portfolio").insert({fund_id:fid,weight:p.weight,note:p.rationale,updated_by:"auto"}); }
-          await supabase.from("mpf_insights").insert({type:"alert",trigger:"portfolio_rebalance",status:"completed",content_en:`Rebalanced: ${dec.reason}\n${np.map((p:{fund_code:string;weight:number;rationale:string})=>`${p.fund_code}:${p.weight}% - ${p.rationale}`).join("\n")}`});
-          rebResult = `rebalanced: ${dec.reason}`;
-        } else { rebResult = `invalid: ${np.length} funds, ${tw}%`; }
-      } else { rebResult = dec.reason || "no change needed"; }
-    } else { rebResult = `no json. status:${r.status} content:${(d.choices?.[0]?.message?.content||d.error?.message||"empty").slice(0,200)}`; }
-  } catch (e) { rebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
-
-  await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: classified, duration_ms: Date.now() - t0 });
-  return NextResponse.json({ ok: true, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
+  await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: fetched + classified, duration_ms: Date.now() - t0 });
+  return NextResponse.json({ ok: true, fetched, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
   } catch (error) {
     await supabase
       .from("scraper_runs")
