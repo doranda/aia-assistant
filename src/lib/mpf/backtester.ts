@@ -532,14 +532,19 @@ export async function runBacktestSession(
   const supabase = createAdminClient();
 
   // 1. Load both runs
-  const { data: runs } = await supabase
+  const { data: runs, error: runsError } = await supabase
     .from("mpf_backtest_runs")
     .select("*")
     .eq("status", "in_progress")
     .order("track");
 
+  console.log(`[backtester] Loaded runs: ${runs?.length || 0}, error: ${runsError?.message || "none"}`);
+
   if (!runs || runs.length === 0) {
-    throw new Error("No active backtest runs found. Call initBacktestRuns first.");
+    // Try without status filter to debug
+    const { data: allRuns } = await supabase.from("mpf_backtest_runs").select("id, track, status");
+    console.log(`[backtester] All runs in table: ${JSON.stringify(allRuns)}`);
+    throw new Error(`No active backtest runs found. Call initBacktestRuns first. (allRuns: ${allRuns?.length || 0})`);
   }
 
   const track1Run = runs.find((r) => r.track === "quant_only") as BacktestRun | undefined;
