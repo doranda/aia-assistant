@@ -1,6 +1,6 @@
 // src/lib/mpf/scrapers/brave-search.ts — Backfill NAV data for 5 missing funds
 import { createAdminClient } from "@/lib/supabase/admin";
-import { MISSING_DAILY_DATA_FUNDS, AIA_FUNDS } from "../constants";
+import { DISCONTINUED_FUNDS, AIA_FUNDS } from "../constants";
 
 const BRAVE_API = "https://api.search.brave.com/res/v1/web/search";
 
@@ -21,7 +21,7 @@ export async function fetchMissingFundPrices(): Promise<number> {
   const supabase = createAdminClient();
   let inserted = 0;
 
-  for (const fundCode of MISSING_DAILY_DATA_FUNDS) {
+  for (const fundCode of DISCONTINUED_FUNDS) {
     const fundInfo = AIA_FUNDS.find(f => f.fund_code === fundCode);
     if (!fundInfo) continue;
 
