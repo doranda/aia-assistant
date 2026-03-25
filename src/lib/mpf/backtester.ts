@@ -92,9 +92,15 @@ function computeWeeklyReturn(
     const startNav = findClosestNav(prices, weekStart);
     const endNav = findClosestNav(prices, weekEnd);
 
-    if (startNav === null || endNav === null || startNav === 0) continue;
+    if (startNav === null || endNav === null || startNav === 0) {
+      console.log(`[backtester] ${code}: no NAV found (start=${startNav}, end=${endNav}, weekStart=${weekStart}, weekEnd=${weekEnd}, priceCount=${prices.length}, firstDate=${prices[0]?.date}, lastDate=${prices[prices.length-1]?.date})`);
+      continue;
+    }
 
     const fundReturn = (endNav - startNav) / startNav;
+    if (totalReturn === 0 && fundReturn !== 0) {
+      console.log(`[backtester] First non-zero return: ${code} ${weekStart}→${weekEnd}: startNav=${startNav}, endNav=${endNav}, return=${(fundReturn*100).toFixed(4)}%`);
+    }
     totalReturn += fundReturn * (weight / 100);
   }
 
