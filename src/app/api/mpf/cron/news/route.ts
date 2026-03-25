@@ -87,10 +87,11 @@ export async function GET(req: NextRequest) {
         if (!fundId) continue;
 
         // Upsert to avoid duplicates
-        await supabase.from("mpf_fund_news").upsert(
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { error: _upsertErr } = await supabase.from("mpf_fund_news").upsert(
           { fund_id: fundId, news_id: article.id, impact_note: (article.impact_tags || []).join(", ") },
           { onConflict: "fund_id,news_id", ignoreDuplicates: true }
-        ).then(() => {}).catch(() => {}); // Ignore if no unique constraint
+        );
       }
     }
   } catch (corrErr) {
