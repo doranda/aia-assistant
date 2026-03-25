@@ -560,13 +560,24 @@ export async function runBacktestSession(
     .update({ budget_used_this_session: 0, updated_at: new Date().toISOString() })
     .in("id", [track1Run.id, track2Run.id]);
 
-  // 3. Pre-load ALL prices from Supabase (single query)
-  const { data: allPriceRows } = await supabase
-    .from("mpf_prices")
-    .select("fund_id, date, nav")
-    .order("date", { ascending: true });
+  // 3. Pre-load ALL prices from Supabase (paginated — default limit is 1000)
+  const allPriceRows: { fund_id: string; date: string; nav: number }[] = [];
+  let offset = 0;
+  const PAGE_SIZE = 5000;
+  while (true) {
+    const { data: page } = await supabase
+      .from("mpf_prices")
+      .select("fund_id, date, nav")
+      .order("date", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
 
-  if (!allPriceRows || allPriceRows.length === 0) {
+    if (!page || page.length === 0) break;
+    allPriceRows.push(...page);
+    if (page.length < PAGE_SIZE) break; // last page
+    offset += PAGE_SIZE;
+  }
+
+  if (allPriceRows.length === 0) {
     throw new Error("No price data found in mpf_prices.");
   }
 
