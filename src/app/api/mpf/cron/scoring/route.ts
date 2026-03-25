@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
         if (!existing) {
           // Extract allocation from debate log (format: "- AIA-XXX: 50% — reasoning")
           const allocMatch = insight.content_en?.match(/AIA-\w+:\s*\d+%/g);
-          const allocation = allocMatch?.map(m => {
+          const allocation = allocMatch?.map((m: string) => {
             const [code, weight] = m.split(/:\s*/);
             return { code: code.trim(), weight: parseInt(weight) };
           }) || [];
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
 
         if (prevInsight?.content_en) {
           const prevAllocMatch = prevInsight.content_en.match(/AIA-\w+:\s*\d+%/g);
-          const prevAllocation = prevAllocMatch?.map(m => {
+          const prevAllocation = prevAllocMatch?.map((m: string) => {
             const [code, weight] = m.split(/:\s*/);
             return { code: code.trim(), weight: parseInt(weight) };
           }) || [];
@@ -167,7 +167,7 @@ export async function GET(req: NextRequest) {
       await sendDiscordAlert({
         title: "📊 MPF Care — Scoring Complete",
         description: `Scored **${scored}** rebalance decisions (${toScore.filter(t => t.type === "live").length} live, ${toScore.filter(t => t.type === "backtest").length} backtest)`,
-        color: COLORS.blue,
+        color: COLORS.green,
       });
     }
 
