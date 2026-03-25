@@ -16,7 +16,7 @@ export type NewsCategory = "markets" | "geopolitical" | "policy" | "macro";
 export type Sentiment = "positive" | "negative" | "neutral";
 export type InsightType = "weekly" | "alert" | "on_demand" | "rebalance_debate";
 export type InsightStatus = "pending" | "generating" | "completed" | "failed";
-export type PriceSource = "mpfa" | "aastocks" | "manual" | "aia_api" | "brave_search";
+export type PriceSource = "mpfa" | "aastocks" | "manual" | "aia_api" | "brave_search" | "yahoo_finance";
 
 export interface MpfFund {
   id: string;

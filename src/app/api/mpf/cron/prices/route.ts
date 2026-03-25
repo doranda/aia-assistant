@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scrapeAAStocksPrices, upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
 import { scrapeAIAPerformance, upsertFundReturns, scrapeAIADailyPrices, upsertDailyPrices } from "@/lib/mpf/scrapers/aia-api";
-import { fetchMissingFundPrices } from "@/lib/mpf/scrapers/brave-search";
+import { fetchYahooFinancePrices } from "@/lib/mpf/scrapers/yahoo-finance";
 import { PRICE_OUTLIER_THRESHOLD_PCT } from "@/lib/mpf/constants";
 import { processPendingAlerts } from "@/lib/mpf/alerts";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
@@ -90,15 +90,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // STEP 4: Brave Search backfill for 5 missing funds
-    let braveCount = 0;
+    // STEP 4: Yahoo Finance backfill for 5 missing funds
+    let yahooCount = 0;
     try {
-      braveCount = await fetchMissingFundPrices();
-      if (braveCount > 0) {
-        console.log(`[prices-cron] Brave Search backfill: ${braveCount} prices inserted`);
+      yahooCount = await fetchYahooFinancePrices();
+      if (yahooCount > 0) {
+        console.log(`[prices-cron] Yahoo Finance backfill: ${yahooCount} prices inserted`);
       }
-    } catch (braveErr) {
-      console.error("[prices-cron] Brave Search backfill failed:", braveErr);
+    } catch (yahooErr) {
+      console.error("[prices-cron] Yahoo Finance backfill failed:", yahooErr);
     }
 
     // Update scraper run
@@ -137,7 +137,7 @@ export async function GET(req: NextRequest) {
     }
 
     await processPendingAlerts();
-    return NextResponse.json({ ok: true, count, source, brave: braveCount, outliers: outlierFunds?.length || 0 });
+    return NextResponse.json({ ok: true, count, source, yahoo: yahooCount, outliers: outlierFunds?.length || 0 });
   } catch (error) {
     await supabase
       .from("scraper_runs")
