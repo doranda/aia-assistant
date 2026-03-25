@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { scrapeAAStocksPrices, upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
 import { scrapeAIAPerformance, upsertFundReturns, scrapeAIADailyPrices, upsertDailyPrices } from "@/lib/mpf/scrapers/aia-api";
-import { fetchYahooFinancePrices } from "@/lib/mpf/scrapers/yahoo-finance";
+// Yahoo Finance scraper removed from live cron — only used for backtesting historical data
+// 5 Fidelity/HK/Japan funds were discontinued by AIA in June 2023
 import { PRICE_OUTLIER_THRESHOLD_PCT } from "@/lib/mpf/constants";
 import { processPendingAlerts } from "@/lib/mpf/alerts";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
@@ -90,16 +91,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // STEP 4: Yahoo Finance backfill for 5 missing funds
-    let yahooCount = 0;
-    try {
-      yahooCount = await fetchYahooFinancePrices();
-      if (yahooCount > 0) {
-        console.log(`[prices-cron] Yahoo Finance backfill: ${yahooCount} prices inserted`);
-      }
-    } catch (yahooErr) {
-      console.error("[prices-cron] Yahoo Finance backfill failed:", yahooErr);
-    }
+    // STEP 4 removed — 5 Fidelity/HK/Japan funds discontinued by AIA June 2023
+    // Yahoo Finance scraper kept in codebase for backtesting only
 
     // Update scraper run
     await supabase
@@ -137,7 +130,7 @@ export async function GET(req: NextRequest) {
     }
 
     await processPendingAlerts();
-    return NextResponse.json({ ok: true, count, source, yahoo: yahooCount, outliers: outlierFunds?.length || 0 });
+    return NextResponse.json({ ok: true, count, source, outliers: outlierFunds?.length || 0 });
   } catch (error) {
     await supabase
       .from("scraper_runs")

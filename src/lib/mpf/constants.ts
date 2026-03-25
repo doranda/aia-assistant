@@ -2,14 +2,13 @@
 
 import type { FundCategory } from "./types";
 
-// All 25 AIA MPF funds (Prime Value Choice scheme)
-// Source: MPFA Fund Platform
+// All 20 active AIA MPF funds (Prime Value Choice scheme)
+// Source: https://www.aia.com.hk/en/products/mpf/list (verified 2026-03-25)
+// 5 funds discontinued June 2023: HEF, JEF, FGR, FSG, FCS (Fidelity series + HK/Japan equity)
 export const AIA_FUNDS = [
   { fund_code: "AIA-AEF", name_en: "Asian Equity Fund", name_zh: "亞洲股票基金", category: "equity" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-EEF", name_en: "European Equity Fund", name_zh: "歐洲股票基金", category: "equity" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-GCF", name_en: "Greater China Equity Fund", name_zh: "大中華股票基金", category: "equity" as FundCategory, risk_rating: 5 },
-  { fund_code: "AIA-HEF", name_en: "Hong Kong Equity Fund", name_zh: "香港股票基金", category: "equity" as FundCategory, risk_rating: 5 },
-  { fund_code: "AIA-JEF", name_en: "Japan Equity Fund", name_zh: "日本股票基金", category: "equity" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-NAF", name_en: "North American Equity Fund", name_zh: "北美股票基金", category: "equity" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-GRF", name_en: "Green Fund", name_zh: "綠色基金", category: "equity" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-AMI", name_en: "American Index Fund", name_zh: "美國指數基金", category: "index" as FundCategory, risk_rating: 4 },
@@ -21,9 +20,6 @@ export const AIA_FUNDS = [
   { fund_code: "AIA-CST", name_en: "Capital Stable Fund", name_zh: "資本穩定基金", category: "mixed" as FundCategory, risk_rating: 2 },
   { fund_code: "AIA-CHD", name_en: "China HK Dynamic Fund", name_zh: "中港動態基金", category: "dynamic" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-MCF", name_en: "Manager's Choice Fund", name_zh: "基金經理精選基金", category: "dynamic" as FundCategory, risk_rating: 4 },
-  { fund_code: "AIA-FGR", name_en: "Fidelity Growth Fund", name_zh: "富達增長基金", category: "fidelity" as FundCategory, risk_rating: 4 },
-  { fund_code: "AIA-FSG", name_en: "Fidelity Stable Growth Fund", name_zh: "富達穩定增長基金", category: "fidelity" as FundCategory, risk_rating: 3 },
-  { fund_code: "AIA-FCS", name_en: "Fidelity Capital Stable Fund", name_zh: "富達資本穩定基金", category: "fidelity" as FundCategory, risk_rating: 2 },
   { fund_code: "AIA-ABF", name_en: "Asian Bond Fund", name_zh: "亞洲債券基金", category: "bond" as FundCategory, risk_rating: 2 },
   { fund_code: "AIA-GBF", name_en: "Global Bond Fund", name_zh: "環球債券基金", category: "bond" as FundCategory, risk_rating: 2 },
   { fund_code: "AIA-CON", name_en: "MPF Conservative Fund", name_zh: "強積金保守基金", category: "conservative" as FundCategory, risk_rating: 1 },
@@ -48,8 +44,8 @@ export const IMPACT_TAG_TO_CATEGORIES: Record<string, FundCategory[]> = {
 
 // Impact tag → specific fund codes (more precise mapping)
 export const IMPACT_TAG_TO_FUNDS: Record<string, string[]> = {
-  hk_equity: ["AIA-HEF", "AIA-GCF", "AIA-HCI"],
-  asia_equity: ["AIA-AEF", "AIA-JEF"],
+  hk_equity: ["AIA-GCF", "AIA-HCI"],
+  asia_equity: ["AIA-AEF"],
   us_equity: ["AIA-NAF", "AIA-AMI"],
   eu_equity: ["AIA-EEF", "AIA-EAI"],
   global_equity: ["AIA-WIF", "AIA-GRW", "AIA-BAL"],
@@ -65,7 +61,7 @@ export const FUND_CATEGORY_LABELS: Record<FundCategory, string> = {
   index: "Index-Tracking",
   mixed: "Mixed / Lifestyle",
   dynamic: "Dynamic",
-  fidelity: "Fidelity Series",
+  fidelity: "Fidelity Series (Discontinued)",
   bond: "Fixed Income",
   conservative: "Conservative",
   guaranteed: "Guaranteed",
@@ -121,12 +117,12 @@ export const INVESTMENT_PROFILE = {
 // These are annual percentages. Lower is better.
 export const FUND_EXPENSE_RATIOS: Record<string, number> = {
   "AIA-AEF": 1.73, "AIA-EEF": 1.76, "AIA-GCF": 1.74,
-  "AIA-HEF": 1.61, "AIA-JEF": 1.75, "AIA-NAF": 1.71,
-  "AIA-GRF": 1.59, "AIA-AMI": 0.97, "AIA-EAI": 0.99,
+  "AIA-NAF": 1.71, "AIA-GRF": 1.59,
+  "AIA-AMI": 0.97, "AIA-EAI": 0.99,
   "AIA-HCI": 0.86, "AIA-WIF": 0.99, "AIA-GRW": 1.69,
   "AIA-BAL": 1.67, "AIA-CST": 1.55, "AIA-CHD": 1.93,
-  "AIA-MCF": 1.82, "AIA-FGR": 1.72, "AIA-FSG": 1.62,
-  "AIA-FCS": 1.50, "AIA-ABF": 1.26, "AIA-GBF": 1.29,
+  "AIA-MCF": 1.82,
+  "AIA-ABF": 1.26, "AIA-GBF": 1.29,
   "AIA-CON": 0.39, "AIA-GPF": 1.88, "AIA-CAF": 0.81,
   "AIA-65P": 0.76,
 };
@@ -139,5 +135,6 @@ export const SCREENER_CATEGORIES = {
   Mixed: ["mixed", "fidelity", "dis"] as FundCategory[],
 } as const;
 
-// Missing funds — not on AIA getFundDetails API, need Brave Search backfill
-export const MISSING_DAILY_DATA_FUNDS = ["AIA-HEF", "AIA-JEF", "AIA-FCS", "AIA-FGR", "AIA-FSG"];
+// Discontinued funds — terminated by AIA, no longer in the active lineup (as of June 2023)
+// Historical price data kept in DB for backtesting purposes only
+export const DISCONTINUED_FUNDS = ["AIA-HEF", "AIA-JEF", "AIA-FCS", "AIA-FGR", "AIA-FSG"];
