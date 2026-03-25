@@ -2,6 +2,7 @@
 // 4-call pipeline: Quant (parallel) + News (parallel) → Debate → Mediator
 import { createAdminClient } from "@/lib/supabase/admin";
 import { INVESTMENT_PROFILE } from "./constants";
+import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
 const MODEL = "anthropic/claude-sonnet-4.6";
@@ -124,6 +125,69 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
       }
     }
   }
+
+  // ===== DATA INTEGRITY GATE — refuse to rebalance with incomplete data =====
+  const { data: activeFunds } = await supabase
+    .from("mpf_funds")
+    .select("id, fund_code")
+    .eq("is_active", true);
+
+  const totalActive = activeFunds?.length || 0;
+
+  // Check 1: Price freshness — all funds must have prices within 5 business days
+  if (totalActive > 0) {
+    const fiveBusinessDaysAgo = new Date();
+    fiveBusinessDaysAgo.setDate(fiveBusinessDaysAgo.getDate() - 7); // 5 biz days ≈ 7 calendar days
+    const cutoff = fiveBusinessDaysAgo.toISOString().split("T")[0];
+
+    const staleFunds: string[] = [];
+    for (const f of activeFunds || []) {
+      const { data: latestPrice } = await supabase
+        .from("mpf_prices")
+        .select("date")
+        .eq("fund_id", f.id)
+        .order("date", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!latestPrice || latestPrice.date < cutoff) {
+        staleFunds.push(f.fund_code);
+      }
+    }
+
+    if (staleFunds.length > 0) {
+      const msg = `BLOCKED: stale price data for ${staleFunds.join(", ")}. Fix data pipeline before rebalancing.`;
+      console.error(`[debate-rebalancer] ${msg}`);
+      await sendDiscordAlert({
+        title: "🚫 MPF Care — Rebalance Blocked (Stale Data)",
+        description: `**${staleFunds.length} funds** have prices older than 5 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or Yahoo Finance backfill to fix.`,
+        color: COLORS.red,
+      });
+      return { rebalanced: false, reason: msg };
+    }
+  }
+
+  // Check 2: Metrics coverage — 80% of active funds must have 3Y metrics
+  const { data: metricsCount } = await supabase
+    .from("mpf_fund_metrics")
+    .select("fund_code")
+    .eq("period", "3y");
+
+  const fundsWithMetrics = metricsCount?.length || 0;
+  const coveragePct = totalActive > 0 ? (fundsWithMetrics / totalActive) * 100 : 0;
+
+  if (coveragePct < 80) {
+    const msg = `BLOCKED: insufficient metrics coverage (${fundsWithMetrics}/${totalActive} funds = ${coveragePct.toFixed(0)}%). Run metrics cron first.`;
+    console.error(`[debate-rebalancer] ${msg}`);
+    await sendDiscordAlert({
+      title: "🚫 MPF Care — Rebalance Blocked (Missing Metrics)",
+      description: `Only **${fundsWithMetrics}/${totalActive}** funds have 3Y metrics (need 80%+).\n\nRun the metrics cron to fix.`,
+      color: COLORS.red,
+    });
+    return { rebalanced: false, reason: msg };
+  }
+
+  console.log(`[debate-rebalancer] Data integrity OK: all prices fresh, metrics ${fundsWithMetrics}/${totalActive} (${coveragePct.toFixed(0)}%)`);
 
   // Gather data for agents
   const { data: portfolio } = await supabase
