@@ -4,7 +4,7 @@ import { FundChart } from "@/components/mpf/fund-chart";
 import { RiskMetrics } from "@/components/mpf/risk-metrics";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import type { MpfFund, MpfPrice, MpfNews, FundMetrics, MetricPeriod } from "@/lib/mpf/types";
-import { FUND_CATEGORY_LABELS } from "@/lib/mpf/constants";
+import { FUND_CATEGORY_LABELS, AIA_API_CODE_MAP } from "@/lib/mpf/constants";
 import type { FundCategory } from "@/lib/mpf/types";
 
 export default async function FundExplorerPage({
@@ -89,6 +89,19 @@ export default async function FundExplorerPage({
           <span className="text-[12px] font-mono text-zinc-300">{fund.fund_code}</span>
           <span className="text-[12px] text-zinc-300">{FUND_CATEGORY_LABELS[fund.category as FundCategory]}</span>
           <span className="text-[12px] text-amber-500" aria-label={`Risk rating ${fund.risk_rating} of 5`}>{riskStars}</span>
+          {(() => {
+            const aiaCode = Object.entries(AIA_API_CODE_MAP).find(([, code]) => code === fund.fund_code)?.[0];
+            return aiaCode ? (
+              <a
+                href={`https://www.aia.com.hk/en/products/mpf/list/fund?id=${aiaCode}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] font-mono text-[#D71920] hover:text-red-400 transition-colors"
+              >
+                View on AIA ↗
+              </a>
+            ) : null;
+          })()}
         </div>
         {latest && (
           <div className="mt-4">
