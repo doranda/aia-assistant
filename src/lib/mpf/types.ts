@@ -104,6 +104,53 @@ export interface FundMetrics {
   computed_at: string;
 }
 
+export type BacktestTrack = "quant_only" | "quant_news";
+export type BacktestStatus = "in_progress" | "completed" | "paused";
+export type ReasoningQuality = "sound" | "lucky" | "wrong" | "inconclusive";
+export type ScorePeriod = "7d" | "30d" | "90d";
+
+export interface BacktestRun {
+  id: string;
+  track: BacktestTrack;
+  cursor_date: string;
+  start_date: string;
+  end_date: string;
+  status: BacktestStatus;
+  total_weeks_processed: number;
+  budget_limit: number;
+  budget_used_this_session: number;
+  cumulative_return_pct: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BacktestResult {
+  id: string;
+  run_id: string;
+  sim_date: string;
+  allocation: { code: string; weight: number }[];
+  debate_log: string | null;
+  confidence: "full" | "degraded";
+  weekly_return_pct: number | null;
+  cumulative_return_pct: number | null;
+  rebalance_triggered: boolean;
+  created_at: string;
+}
+
+export interface RebalanceScore {
+  id: string;
+  insight_id: string | null;
+  backtest_result_id: string | null;
+  score_period: ScorePeriod;
+  claims: { claim: string; outcome: "correct" | "incorrect" | "inconclusive"; evidence: string }[];
+  win_rate: number | null;
+  reasoning_quality: ReasoningQuality;
+  lessons: string[];
+  actual_return_pct: number | null;
+  baseline_return_pct: number | null;
+  scored_at: string;
+}
+
 // View models for UI
 export interface FundWithLatestPrice extends MpfFund {
   latest_nav: number | null;
