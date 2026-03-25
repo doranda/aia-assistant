@@ -566,21 +566,27 @@ export async function runBacktestSession(
     .update({ budget_used_this_session: 0, updated_at: new Date().toISOString() })
     .in("id", [track1Run.id, track2Run.id]);
 
-  // 3. Pre-load ALL prices from Supabase (paginated — default limit is 1000)
+  // 3. Pre-load ALL prices from Supabase
+  // Supabase default max is 1000 rows. We use .limit() per page and paginate.
   const allPriceRows: { fund_id: string; date: string; nav: number }[] = [];
   let offset = 0;
-  const PAGE_SIZE = 5000;
+  const PAGE_SIZE = 1000; // Match Supabase default max
   while (true) {
-    const { data: page } = await supabase
+    const { data: page, error: pageErr } = await supabase
       .from("mpf_prices")
       .select("fund_id, date, nav")
       .order("date", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
+      .range(offset, offset + PAGE_SIZE - 1)
+      .limit(PAGE_SIZE);
 
+    if (pageErr) {
+      console.error(`[backtester] Price fetch error at offset ${offset}:`, pageErr.message);
+      break;
+    }
     if (!page || page.length === 0) break;
     allPriceRows.push(...page);
+    offset += page.length;
     if (page.length < PAGE_SIZE) break; // last page
-    offset += PAGE_SIZE;
   }
 
   if (allPriceRows.length === 0) {
