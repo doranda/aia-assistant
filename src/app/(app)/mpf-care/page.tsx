@@ -1,11 +1,13 @@
 // src/app/(app)/mpf-care/page.tsx
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { PortfolioReference } from "@/components/mpf/portfolio-reference";
 import { DebateLog } from "@/components/mpf/debate-log";
 import { FundHeatmap } from "@/components/mpf/fund-heatmap";
 import { TopMovers } from "@/components/mpf/top-movers";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
-import type { FundWithLatestPrice, MpfNews, MpfInsight } from "@/lib/mpf/types";
+import { ModelPerformance } from "@/components/mpf/model-performance";
+import type { FundWithLatestPrice, MpfNews, MpfInsight, RebalanceScore } from "@/lib/mpf/types";
 import { TrendingUp, Newspaper, Brain, Activity, BarChart3 } from "lucide-react";
 
 async function getOverviewData() {
@@ -126,6 +128,15 @@ async function getOverviewData() {
     .limit(1)
     .single();
 
+  // Recent rebalance scores (admin client bypasses RLS)
+  const adminClient = createAdminClient();
+  const { data: recentScores } = await adminClient
+    .from("mpf_rebalance_scores")
+    .select("*")
+    .not("insight_id", "is", null)
+    .order("scored_at", { ascending: false })
+    .limit(20);
+
   // Last scraper run
   const { data: lastRun } = await supabase
     .from("scraper_runs")
@@ -142,13 +153,14 @@ async function getOverviewData() {
     news: (news || []) as MpfNews[],
     latestInsight: latestInsight as MpfInsight | null,
     latestDebate: latestDebate as { content_en: string | null; content_zh: string | null; created_at: string } | null,
+    recentScores: (recentScores || []) as RebalanceScore[],
     lastRun,
     priceDate,
   };
 }
 
 export default async function MpfCarePage() {
-  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, latestDebate, lastRun, priceDate } = await getOverviewData();
+  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, latestDebate, recentScores, lastRun, priceDate } = await getOverviewData();
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
@@ -218,6 +230,11 @@ export default async function MpfCarePage() {
           createdAt={latestDebate.created_at}
         />
       )}
+
+      {/* Model Performance — win rate and track record */}
+      <div className="mt-8">
+        <ModelPerformance scores={recentScores} />
+      </div>
 
       {/* Top Movers — split into Gainers and Losers */}
       <section aria-labelledby="top-movers-heading" className="mb-16">
