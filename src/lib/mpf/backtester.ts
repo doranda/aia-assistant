@@ -609,6 +609,18 @@ export async function runBacktestSession(
     `[backtester] Loaded ${allPriceRows.length} prices for ${allPrices.size} funds`
   );
 
+  // Sanity check: if we loaded fewer than 10K prices, something is wrong
+  if (allPriceRows.length < 10000) {
+    throw new Error(`Price loading seems truncated: only ${allPriceRows.length} rows loaded for ${allPrices.size} funds. Expected 140K+. Check Supabase grants/RLS.`);
+  }
+
+  // Debug: log first fund's price range
+  const sampleFund = allPrices.entries().next().value;
+  if (sampleFund) {
+    const [sCode, sPrices] = sampleFund;
+    console.log(`[backtester] Sample: ${sCode} has ${sPrices.length} prices, ${sPrices[0]?.date} → ${sPrices[sPrices.length-1]?.date}`);
+  }
+
   // 6. Track state
   let budgetUsed = 0;
   let weeksProcessed = 0;
