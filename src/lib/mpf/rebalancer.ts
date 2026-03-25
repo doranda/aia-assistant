@@ -8,7 +8,7 @@ const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
 const MODEL = "anthropic/claude-sonnet-4.6";
 const PER_CALL_TIMEOUT = 30000; // 30s
 
-interface PortfolioProposal {
+export interface PortfolioProposal {
   funds: { code: string; weight: number; reasoning: string }[];
   summary: string;
 }
@@ -32,7 +32,7 @@ interface RebalanceResult {
   debate_log?: string;
 }
 
-async function callGateway(systemPrompt: string, userContent: string): Promise<string> {
+export async function callGateway(systemPrompt: string, userContent: string): Promise<string> {
   const key = process.env.AI_GATEWAY_API_KEY;
   if (!key) throw new Error("No AI_GATEWAY_API_KEY");
 
@@ -68,7 +68,7 @@ async function callGateway(systemPrompt: string, userContent: string): Promise<s
   }
 }
 
-function parseJSON<T>(raw: string): T | null {
+export function parseJSON<T>(raw: string): T | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try {
@@ -76,6 +76,40 @@ function parseJSON<T>(raw: string): T | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Build the shared constraints text for debate prompts.
+ * Exported for reuse by the backtester.
+ */
+export function buildSharedConstraints(availableFunds: string): string {
+  return `
+STRICT RULES:
+1. Output exactly 3 funds. Duplicates allowed (e.g., all 3 can be the same fund for 100% concentration).
+2. Weights: 0-100% in 10% increments. Total MUST = 100%.
+3. Prioritize: (1) capital preservation, (2) long-term compounding. Never chase short-term returns.
+4. 100% equity is valid. 100% cash (AIA-CON) is valid. No allocation limits.
+Available funds: ${availableFunds}
+
+Return ONLY valid JSON (no markdown):
+{ "funds": [{ "code": "AIA-XXX", "weight": 50, "reasoning": "why" }, ...], "summary": "1-2 sentence summary" }`;
+}
+
+/**
+ * Run only the Quant Agent — used by backtester Track 1 and the full debate pipeline.
+ * Returns a PortfolioProposal based purely on metrics.
+ */
+export async function runQuantAgentOnly(
+  metricsText: string,
+  currentPortfolioText: string,
+  profileText: string,
+  sharedConstraints: string
+): Promise<PortfolioProposal | null> {
+  const raw = await callGateway(
+    "You are a quantitative analyst for an MPF pension fund. Propose a 3-fund portfolio based PURELY on the metrics below. Ignore news — focus only on the numbers.",
+    `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nFUND METRICS (3Y):\n${metricsText}\n\n${sharedConstraints}`
+  );
+  return parseJSON<PortfolioProposal>(raw);
 }
 
 /**
@@ -236,30 +270,39 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   const availableFunds = (funds || []).map(f => `${f.fund_code} (${f.name_en})`).join(", ");
 
-  const sharedConstraints = `
-STRICT RULES:
-1. Output exactly 3 funds. Duplicates allowed (e.g., all 3 can be the same fund for 100% concentration).
-2. Weights: 0-100% in 10% increments. Total MUST = 100%.
-3. Prioritize: (1) capital preservation, (2) long-term compounding. Never chase short-term returns.
-4. 100% equity is valid. 100% cash (AIA-CON) is valid. No allocation limits.
-Available funds: ${availableFunds}
+  const sharedConstraints = buildSharedConstraints(availableFunds);
 
-Return ONLY valid JSON (no markdown):
-{ "funds": [{ "code": "AIA-XXX", "weight": 50, "reasoning": "why" }, ...], "summary": "1-2 sentence summary" }`;
+  // ===== FEEDBACK INJECTION — last 5 scored decisions for Debate + Mediator =====
+  let trackRecordBlock = "";
+  const { data: recentScores } = await supabase
+    .from("mpf_rebalance_scores")
+    .select("reasoning_quality, win_rate, lessons, actual_return_pct, baseline_return_pct, scored_at")
+    .not("insight_id", "is", null)
+    .order("scored_at", { ascending: false })
+    .limit(5);
+
+  if (recentScores && recentScores.length > 0) {
+    const overallWinRate = recentScores.filter(s =>
+      s.reasoning_quality === "sound" || s.reasoning_quality === "lucky"
+    ).length / recentScores.length;
+
+    trackRecordBlock = `\n\nTRACK RECORD (last ${recentScores.length} scored decisions):\n` +
+      recentScores.map(s => {
+        const delta = (s.actual_return_pct || 0) - (s.baseline_return_pct || 0);
+        return `- ${new Date(s.scored_at).toISOString().split("T")[0]}: ${(s.reasoning_quality || "unknown").toUpperCase()} (${delta > 0 ? "+" : ""}${delta.toFixed(1)}% vs baseline)\n  Lesson: "${(s.lessons || [])[0] || "No lesson"}"`;
+      }).join("\n") +
+      `\n\nOverall win rate: ${(overallWinRate * 100).toFixed(0)}%`;
+  }
 
   // ===== STEP 1: Parallel proposals =====
-  const [quantRaw, newsRaw] = await Promise.all([
-    callGateway(
-      "You are a quantitative analyst for an MPF pension fund. Propose a 3-fund portfolio based PURELY on the metrics below. Ignore news — focus only on the numbers.",
-      `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nFUND METRICS (3Y):\n${metricsText}\n\n${sharedConstraints}`
-    ),
+  const [quantProposal, newsRaw] = await Promise.all([
+    runQuantAgentOnly(metricsText, currentPortfolioText, profileText, sharedConstraints),
     callGateway(
       "You are a market analyst for an MPF pension fund. Propose a 3-fund portfolio based on current market conditions and recent news sentiment. Ignore quantitative metrics — focus on macro trends and risk events.",
       `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nRECENT NEWS (48h):\n${newsText || "No recent news"}\n\n${sharedConstraints}`
     ),
   ]);
 
-  const quantProposal = parseJSON<PortfolioProposal>(quantRaw);
   const newsProposal = parseJSON<PortfolioProposal>(newsRaw);
 
   if (!quantProposal || !newsProposal) {
@@ -268,7 +311,7 @@ Return ONLY valid JSON (no markdown):
 
   // ===== STEP 2: Debate =====
   const debateRaw = await callGateway(
-    "You are a senior portfolio analyst reviewing two independent proposals for a pension fund. Identify where they agree, where they conflict, and for each conflict argue which position is stronger and why. Be decisive — don't hedge. If one agent is clearly wrong, say so.",
+    "You are a senior portfolio analyst reviewing two independent proposals for a pension fund. Identify where they agree, where they conflict, and for each conflict argue which position is stronger and why. Be decisive — don't hedge. If one agent is clearly wrong, say so." + trackRecordBlock,
     `QUANT AGENT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS AGENT PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nReturn JSON: { "agreements": ["..."], "conflicts": [{ "topic": "...", "quantPosition": "...", "newsPosition": "...", "verdict": "quant|news", "reasoning": "..." }], "recommendation": "1-2 sentence recommendation" }`
   );
 
@@ -279,7 +322,7 @@ Return ONLY valid JSON (no markdown):
 
   // ===== STEP 3: Mediator =====
   const mediatorRaw = await callGateway(
-    `You are the chief investment officer making the final portfolio allocation. Produce the consensus 3-fund portfolio based on the debate below. ${sharedConstraints}\n\nReturn JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en": "plain English summary for the team", "summary_zh": "中文摘要", "debate_log": "Quant said X. News said Y. They agreed on Z. Final decision: ..." }`,
+    `You are the chief investment officer making the final portfolio allocation. Produce the consensus 3-fund portfolio based on the debate below. ${sharedConstraints}\n\nReturn JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en": "plain English summary for the team", "summary_zh": "中文摘要", "debate_log": "Quant said X. News said Y. They agreed on Z. Final decision: ..." }` + trackRecordBlock,
     `QUANT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nDEBATE:\n${JSON.stringify(debate, null, 2)}\n\nFUND METRICS:\n${metricsText}\n\nNEWS SUMMARY:\n${newsText || "No recent news"}`
   );
 
