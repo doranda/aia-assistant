@@ -6,12 +6,13 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // Fund code -> Yahoo Finance ticker mapping
-const YAHOO_TICKERS: Record<string, string> = {
-  "AIA-FGR": "AIAMPFPVCFID.HK",
-  "AIA-JEF": "0P00008SSI.HK",
-  "AIA-HEF": "AIAMPFPVCHON.HK",
-  "AIA-FSG": "AIAMPFPVCFIS.HK", // May need adjustment
-  "AIA-FCS": "AIAMPFPVCFIC.HK", // May need adjustment
+// Multiple tickers per fund in priority order — tries each until one works
+const YAHOO_TICKERS: Record<string, string[]> = {
+  "AIA-FGR": ["0P0000SI0V.HK", "AIAMPFPVCFID.HK"],
+  "AIA-JEF": ["0P00008SSI.HK", "F0HKG06ZVK.HK"],
+  "AIA-HEF": ["AIAMPFPVCHON.HK"],
+  "AIA-FSG": ["0P0000SI0W.HK", "0P0000SI0X.HK"],  // Pattern-based guess
+  "AIA-FCS": ["0P0000SI0U.HK", "0P0000SI0T.HK"],  // Pattern-based guess
 };
 
 /**
@@ -27,8 +28,8 @@ export async function fetchYahooFinancePrices(fundCodes?: string[]): Promise<num
   let totalInserted = 0;
 
   for (const fundCode of codes) {
-    const ticker = YAHOO_TICKERS[fundCode];
-    if (!ticker) continue;
+    const tickers = YAHOO_TICKERS[fundCode];
+    if (!tickers?.length) continue;
 
     // Get fund_id
     const { data: fund } = await supabase
@@ -61,34 +62,41 @@ export async function fetchYahooFinancePrices(fundCodes?: string[]): Promise<num
       continue;
     }
 
-    try {
-      const url = `https://query1.finance.yahoo.com/v7/finance/download/${encodeURIComponent(ticker)}?period1=${startDate}&period2=${endDate}&interval=1d&events=history`;
+    // Try each ticker until one works
+    let fetched = false;
+    for (const ticker of tickers) {
+      if (fetched) break;
 
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!res.ok) {
-        // Fallback to v8 chart API if CSV endpoint fails (e.g. crumb/cookie issue)
-        console.warn(`[yahoo] ${fundCode} (${ticker}): CSV HTTP ${res.status}, trying v8 chart API`);
+      try {
+        // Try chart API first (more reliable, no cookie issues)
         const chartCount = await fetchFromChartAPI(supabase, fund.id, fundCode, ticker, startDate, endDate);
-        totalInserted += chartCount;
-        continue;
-      }
+        if (chartCount > 0) {
+          totalInserted += chartCount;
+          fetched = true;
+          break;
+        }
 
-      const csv = await res.text();
-      const lines = csv.trim().split("\n");
+        // Fallback to CSV download
+        const url = `https://query1.finance.yahoo.com/v7/finance/download/${encodeURIComponent(ticker)}?period1=${startDate}&period2=${endDate}&interval=1d&events=history`;
+        const res = await fetch(url, {
+          headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+          signal: AbortSignal.timeout(15000),
+        });
 
-      // Skip header row
-      if (lines.length < 2) {
-        console.log(`[yahoo] ${fundCode}: no data rows`);
-        continue;
-      }
+        if (!res.ok) {
+          console.log(`[yahoo] ${fundCode} (${ticker}): HTTP ${res.status}, trying next ticker`);
+          continue;
+        }
 
-      const rows: { fund_id: string; date: string; nav: number; daily_change_pct: number | null; source: string }[] = [];
+        const csv = await res.text();
+        const lines = csv.trim().split("\n");
+
+        if (lines.length < 2) {
+          console.log(`[yahoo] ${fundCode} (${ticker}): no data rows, trying next`);
+          continue;
+        }
+
+        const rows: { fund_id: string; date: string; nav: number; daily_change_pct: number | null; source: string }[] = [];
       let prevNav: number | null = null;
 
       for (let i = 1; i < lines.length; i++) {
@@ -128,9 +136,15 @@ export async function fetchYahooFinancePrices(fundCodes?: string[]): Promise<num
       }
 
       totalInserted += rows.length;
-      console.log(`[yahoo] ${fundCode}: ${rows.length} prices from ${rows[0].date} to ${rows[rows.length - 1].date}`);
-    } catch (err) {
-      console.error(`[yahoo] ${fundCode} error:`, err);
+      fetched = true;
+      console.log(`[yahoo] ${fundCode} (${ticker}): ${rows.length} prices from ${rows[0].date} to ${rows[rows.length - 1].date}`);
+      } catch (err) {
+        console.error(`[yahoo] ${fundCode} (${ticker}) error:`, err);
+      }
+    } // end ticker loop
+
+    if (!fetched) {
+      console.log(`[yahoo] ${fundCode}: all tickers exhausted, no data fetched`);
     }
   }
 
