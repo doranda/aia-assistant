@@ -416,6 +416,21 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
     model: MODEL,
   });
 
+  // Discord notification for successful rebalance
+  const portfolioSummary = activePortfolio.map(p => `${p.code} ${p.weight}%`).join(" / ");
+  await sendDiscordAlert({
+    title: "📊 MPF Care — Portfolio Rebalanced",
+    description: [
+      `**New allocation:** ${portfolioSummary}`,
+      `**Reason:** ${mediator.summary_en.slice(0, 200)}`,
+      "",
+      "**Debate summary:**",
+      `Agreements: ${debate.agreements.slice(0, 2).join("; ")}`,
+      debate.conflicts.length > 0 ? `Conflicts: ${debate.conflicts.map(c => c.topic).join(", ")}` : "No conflicts",
+    ].join("\n"),
+    color: COLORS.green,
+  }).catch(() => {}); // Don't fail rebalance if Discord fails
+
   return {
     rebalanced: true,
     reason: mediator.summary_en,
