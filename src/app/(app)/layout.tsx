@@ -43,12 +43,12 @@ export default async function AppLayout({
     pendingCount = count || 0;
   }
 
-  // Check for new MPF insights (generated in last 24h)
+  // Check if MPF pipeline is healthy (successful scraper run in last 12h = green dot)
   const { count: mpfAlertCount } = await supabase
-    .from("mpf_insights")
+    .from("scraper_runs")
     .select("*", { count: "exact", head: true })
-    .eq("status", "completed")
-    .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+    .eq("status", "success")
+    .gte("run_at", new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString());
 
   return (
     <>
