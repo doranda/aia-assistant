@@ -1,0 +1,32 @@
+{
+  "crons": [
+    {
+      "path": "/api/mpf/cron/prices",
+      "schedule": "0 11 * * 1-5"
+    },
+    {
+      "path": "/api/mpf/cron/metrics",
+      "schedule": "30 11 * * 1-5"
+    },
+    {
+      "path": "/api/mpf/cron/news",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/mpf/cron/weekly",
+      "schedule": "0 15 * * 0"
+    },
+    {
+      "path": "/api/mpf/cron/health-report",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/mpf/cron/scoring",
+      "schedule": "0 16 * * 0"
+    },
+    {
+      "path": "/api/mpf/cron/portfolio-nav",
+      "schedule": "0 4 * * 1-5"
+    }
+  ]
+}

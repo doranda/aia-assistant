@@ -2,14 +2,14 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, MessageSquare, ShieldCheck, FileText, Users } from "lucide-react";
+import { LayoutDashboard, MessageSquare, ShieldCheck, FileText, TrendingUp } from "lucide-react";
 
 const navItems = [
   { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+  { label: "MPF", href: "/mpf-care", icon: TrendingUp },
   { label: "Chat", href: "/chat", icon: MessageSquare },
   { label: "Check", href: "/claim-check", icon: ShieldCheck },
   { label: "Docs", href: "/documents", icon: FileText },
-  { label: "Team", href: "/team", icon: Users },
 ];
 
 export function MobileNav({ pendingCount = 0 }: { pendingCount?: number }) {

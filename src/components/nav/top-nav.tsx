@@ -3,10 +3,11 @@
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, MessageSquare, ShieldCheck, FileText, BookOpen, Users } from "lucide-react";
+import { LayoutDashboard, MessageSquare, ShieldCheck, FileText, BookOpen, Users, TrendingUp } from "lucide-react";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "MPF Care", href: "/mpf-care", icon: TrendingUp },
   { label: "Chat", href: "/chat", icon: MessageSquare },
   { label: "Claim Check", href: "/claim-check", icon: ShieldCheck },
   { label: "Documents", href: "/documents", icon: FileText },
@@ -14,7 +15,7 @@ const navItems = [
   { label: "Team", href: "/team", icon: Users },
 ];
 
-export function TopNav({ userInitials, pendingCount = 0 }: { userInitials: string; pendingCount?: number }) {
+export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { userInitials: string; pendingCount?: number; mpfAlertCount?: number }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -56,6 +57,9 @@ export function TopNav({ userInitials, pendingCount = 0 }: { userInitials: strin
                 {item.label}
                 {item.label === "Team" && pendingCount > 0 && (
                   <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" />
+                )}
+                {item.label === "MPF Care" && mpfAlertCount > 0 && (
+                  <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 )}
               </button>
             );

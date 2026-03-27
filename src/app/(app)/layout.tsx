@@ -43,9 +43,20 @@ export default async function AppLayout({
     pendingCount = count || 0;
   }
 
+  // Check if MPF pipeline is healthy (successful scraper run in last 12h = green dot)
+  const { count: mpfAlertCount } = await supabase
+    .from("scraper_runs")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "success")
+    .gte("run_at", new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString());
+
   return (
     <>
-      <TopNav userInitials={initials || "?"} pendingCount={pendingCount} />
+      <TopNav
+        userInitials={initials || "?"}
+        pendingCount={pendingCount}
+        mpfAlertCount={mpfAlertCount || 0}
+      />
       <div className="pt-12 pb-20 lg:pb-0 min-h-dvh">{children}</div>
       <MobileNav pendingCount={pendingCount} />
     </>

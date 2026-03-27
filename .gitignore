@@ -22,3 +22,8 @@ npm-debug.log*
 # autoresearch internals
 .autoresearch/baseline/
 .autoresearch/results.tsv
+.vercel
+.env.production
+
+# supabase CLI cache
+supabase/.temp/

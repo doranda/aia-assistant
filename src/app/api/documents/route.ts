@@ -1,0 +1,182 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { ingestDocument } from "@/lib/ingestion";
+
+export async function PATCH(request: Request) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { id, title, category, company, tags } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (title !== undefined) updates.title = title;
+  if (category !== undefined) updates.category = category;
+  if (company !== undefined) updates.company = company || null;
+  if (tags !== undefined) updates.tags = tags;
+
+  const { data: doc, error } = await supabase
+    .from("documents")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: `Update failed: ${error.message}` }, { status: 500 });
+  }
+
+  return NextResponse.json(doc);
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file") as File | null;
+  const category = formData.get("category") as string;
+  const company = formData.get("company") as string | null;
+  const tags = formData.get("tags") as string | null;
+
+  if (!file || !category) {
+    return NextResponse.json({ error: "File and category are required" }, { status: 400 });
+  }
+
+  if (file.type !== "application/pdf") {
+    return NextResponse.json({ error: "Only PDF files allowed" }, { status: 400 });
+  }
+  if (file.size > 50 * 1024 * 1024) {
+    return NextResponse.json({ error: "File exceeds 50MB limit" }, { status: 400 });
+  }
+
+  const fileName = `${user.id}/${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage
+    .from("documents")
+    .upload(fileName, file, { contentType: "application/pdf", upsert: false });
+
+  if (uploadError) {
+    return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 });
+  }
+
+  const { data: doc, error: dbError } = await supabase
+    .from("documents")
+    .insert({
+      title: file.name.replace(/\.pdf$/i, ""),
+      category,
+      source: "upload",
+      company: company || null,
+      tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+      file_path: fileName,
+      file_size: file.size,
+      status: "pending",
+      uploaded_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (dbError) {
+    await supabase.storage.from("documents").remove([fileName]);
+    return NextResponse.json({ error: `Database error: ${dbError.message}` }, { status: 500 });
+  }
+
+  // Trigger ingestion (fire and forget — runs async)
+  ingestDocument(supabase, doc.id).then((result) => {
+    if (result.success) {
+      console.log(`Ingestion complete: ${doc.id}, ${result.chunkCount} chunks`);
+    } else {
+      console.error(`Ingestion failed for ${doc.id}:`, result.error);
+    }
+  }).catch((err) => {
+    console.error("Ingestion crashed:", err);
+  });
+
+  return NextResponse.json(doc, { status: 201 });
+}
+
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id, reason } = await request.json();
+
+  if (!id) {
+    return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
+  }
+
+  // Check user role
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const role = profile?.role as import("@/lib/types").UserRole;
+
+  // Agents/members create a delete request instead of deleting directly
+  if (role === "agent" || role === "member") {
+    const { error: reqError } = await supabase.from("delete_requests").insert({
+      document_id: id,
+      requested_by: user.id,
+      reason: reason || null,
+    });
+
+    if (reqError) {
+      return NextResponse.json(
+        { error: `Request failed: ${reqError.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, requested: true });
+  }
+
+  // Admin/manager: delete directly
+  const { data: doc } = await supabase
+    .from("documents")
+    .select("file_path")
+    .eq("id", id)
+    .single();
+
+  const { error } = await supabase
+    .from("documents")
+    .update({ is_deleted: true })
+    .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: `Delete failed: ${error.message}` }, { status: 500 });
+  }
+
+  await supabase.from("chunks").delete().eq("document_id", id);
+
+  if (doc?.file_path) {
+    await supabase.storage.from("documents").remove([doc.file_path]);
+  }
+
+  return NextResponse.json({ success: true });
+}
