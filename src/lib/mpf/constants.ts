@@ -93,6 +93,19 @@ export const AIA_API_CODE_MAP: Record<string, string> = {
   "NA": "AIA-65P",
 };
 
+// Code → full name lookup for Discord alerts and UI
+export const FUND_CODE_TO_NAME: Record<string, string> = Object.fromEntries(
+  AIA_FUNDS.map(f => [f.fund_code, f.name_en])
+);
+
+/** Convert "AIA-CON 60%" to "MPF Conservative Fund 60%" */
+export function formatAllocation(alloc: { code: string; weight: number }[]): string {
+  return alloc
+    .filter(a => a.weight > 0)
+    .map(a => `${FUND_CODE_TO_NAME[a.code] || a.code} ${a.weight}%`)
+    .join(" / ");
+}
+
 // Outlier threshold for alert triggers
 export const PRICE_OUTLIER_THRESHOLD_PCT = 2;
 

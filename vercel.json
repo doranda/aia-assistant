@@ -27,6 +27,10 @@
     {
       "path": "/api/mpf/cron/portfolio-nav",
       "schedule": "0 4 * * 1-5"
+    },
+    {
+      "path": "/api/mpf/cron/monthly-report",
+      "schedule": "0 1 * * 1"
     }
   ]
 }

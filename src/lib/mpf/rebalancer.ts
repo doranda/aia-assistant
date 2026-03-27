@@ -1,7 +1,7 @@
 // src/lib/mpf/rebalancer.ts — Dual-Agent Debate Rebalancer
 // 4-call pipeline: Quant (parallel) + News (parallel) → Debate → Mediator
 import { createAdminClient } from "@/lib/supabase/admin";
-import { INVESTMENT_PROFILES } from "./constants";
+import { INVESTMENT_PROFILES, formatAllocation } from "./constants";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
@@ -594,7 +594,7 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
   });
 
   // Discord notification
-  const portfolioSummary = activePortfolio.map(p => `${p.code} ${p.weight}%`).join(" / ");
+  const portfolioSummary = formatAllocation(activePortfolio);
   await sendDiscordAlert({
     title: "📊 MPF Care — Switch Submitted (T+2)",
     description: [

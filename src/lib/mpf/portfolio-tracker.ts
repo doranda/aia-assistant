@@ -11,6 +11,7 @@ import {
   GPF_MAX_SWITCHES_PER_YEAR,
   LONG_WEEKEND_THRESHOLD_DAYS,
   PORTFOLIO_BASE_NAV,
+  formatAllocation,
 } from "./constants";
 import type {
   FundAllocation,
@@ -306,8 +307,8 @@ export async function requestEmergencySwitch(params: {
   if (error) throw new Error(`Failed to insert emergency switch: ${error.message}`);
 
   // Discord alert with full context (truncate to fit 2000-char embed limit)
-  const oldStr = params.oldAllocation.map((a) => `${a.code} ${a.weight}%`).join(" / ");
-  const newStr = params.newAllocation.map((a) => `${a.code} ${a.weight}%`).join(" / ");
+  const oldStr = formatAllocation(params.oldAllocation);
+  const newStr = formatAllocation(params.newAllocation);
 
   await sendDiscordAlert({
     title: "🚨 Emergency Switch — Approval Required",
@@ -637,8 +638,8 @@ export async function processSettlements(): Promise<{
     }
 
     // Discord notification
-    const oldStr = oldAlloc.map((a) => `${a.code} ${a.weight}%`).join(" / ");
-    const newStr = newAlloc.map((a) => `${a.code} ${a.weight}%`).join(" / ");
+    const oldStr = formatAllocation(oldAlloc);
+    const newStr = formatAllocation(newAlloc);
     // Slippage = market movement during cash period (T+1 sell to T+2 buy)
     // Positive = market went up while we were in cash (we missed gains)
     // Negative = market went down while we were in cash (we dodged losses)
