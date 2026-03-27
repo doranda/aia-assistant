@@ -51,7 +51,7 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
           id="portfolio-ref-heading"
           className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300"
         >
-          Reference Portfolio
+          Allocation Performance
         </h2>
         <span className="text-[10px] font-mono text-zinc-400">
           Last rebalanced {new Date(updatedAt).toLocaleDateString("en-HK", { day: "numeric", month: "short", year: "numeric" })}

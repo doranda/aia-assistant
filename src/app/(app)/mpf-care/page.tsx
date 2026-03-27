@@ -2,6 +2,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PortfolioReference } from "@/components/mpf/portfolio-reference";
+import { PortfolioTrackRecord } from "@/components/mpf/portfolio-track-record";
 import { DebateLog } from "@/components/mpf/debate-log";
 import { FundHeatmap } from "@/components/mpf/fund-heatmap";
 import { TopMovers } from "@/components/mpf/top-movers";
@@ -137,6 +138,13 @@ async function getOverviewData() {
     .order("scored_at", { ascending: false })
     .limit(20);
 
+  // Portfolio NAV history (tracked performance)
+  const { data: portfolioNav } = await supabase
+    .from("mpf_portfolio_nav")
+    .select("date, nav, daily_return_pct, is_cash")
+    .eq("is_pretracking", false)
+    .order("date", { ascending: true });
+
   // Last scraper run
   const { data: lastRun } = await supabase
     .from("scraper_runs")
@@ -156,11 +164,12 @@ async function getOverviewData() {
     recentScores: (recentScores || []) as RebalanceScore[],
     lastRun,
     priceDate,
+    portfolioNav: (portfolioNav || []) as { date: string; nav: number; daily_return_pct: number | null; is_cash: boolean }[],
   };
 }
 
 export default async function MpfCarePage() {
-  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, latestDebate, recentScores, lastRun, priceDate } = await getOverviewData();
+  const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, latestDebate, recentScores, lastRun, priceDate, portfolioNav } = await getOverviewData();
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
@@ -212,8 +221,18 @@ export default async function MpfCarePage() {
         </a>
       </nav>
 
-      {/* Reference Portfolio — first thing users see */}
-      <div className="mt-12">
+      {/* Portfolio Track Record — actual tracked NAV since inception */}
+      {portfolioNav.length > 0 && (
+        <div className="mt-12">
+          <PortfolioTrackRecord
+            navHistory={portfolioNav}
+            inceptionDate={portfolioNav[0]?.date || null}
+          />
+        </div>
+      )}
+
+      {/* Allocation Performance — individual fund returns weighted by portfolio */}
+      <div className={portfolioNav.length > 0 ? "mt-0" : "mt-12"}>
         <PortfolioReference
           funds={portfolioFunds}
           priceDate={priceDate}
