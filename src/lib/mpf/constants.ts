@@ -105,13 +105,26 @@ export const INSIGHT_DISCLAIMER = {
 // Risk-free rate for Sharpe/Sortino (HIBOR approximate, annual)
 export const RISK_FREE_RATE = 0.04;
 
-// Investment profile — fixed 28yo long-term growth
-export const INVESTMENT_PROFILE = {
-  age: 28,
-  equity_pct: 82, // 110 - age (informational only — no allocation limits enforced)
-  bond_pct: 18,
-  label: "28yo Long-Term Growth",
+// Investment profiles — two modes for debate rebalancer
+// Mode 1: Age-based (35yo) — traditional lifecycle allocation
+// Mode 2: Pure quant+news — no age assumption, purely data-driven
+export const INVESTMENT_PROFILES = {
+  age_based: {
+    age: 35,
+    equity_pct: 75, // 110 - age (informational anchor, NOT a floor)
+    bond_pct: 25,
+    label: "35yo Growth (age-based)",
+  },
+  pure_quant: {
+    age: null,
+    equity_pct: null, // no anchor — let the data decide
+    bond_pct: null,
+    label: "Pure Quantitative + News (no age assumption)",
+  },
 } as const;
+
+// Default profile for backward compat
+export const INVESTMENT_PROFILE = INVESTMENT_PROFILES.age_based;
 
 // Fund Expense Ratios (FER %) — Source: MPFA published data 2025
 // These are annual percentages. Lower is better.

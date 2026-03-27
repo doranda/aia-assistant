@@ -12,7 +12,7 @@ import {
   buildSharedConstraints,
   type PortfolioProposal,
 } from "./rebalancer";
-import { INVESTMENT_PROFILE, AIA_FUNDS, FUND_EXPENSE_RATIOS } from "./constants";
+import { INVESTMENT_PROFILE, INVESTMENT_PROFILES, AIA_FUNDS, FUND_EXPENSE_RATIOS } from "./constants";
 import type { BacktestRun } from "./types";
 
 // ---------------------------------------------------------------------------

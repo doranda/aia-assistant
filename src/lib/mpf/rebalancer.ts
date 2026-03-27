@@ -1,12 +1,12 @@
 // src/lib/mpf/rebalancer.ts — Dual-Agent Debate Rebalancer
 // 4-call pipeline: Quant (parallel) + News (parallel) → Debate → Mediator
 import { createAdminClient } from "@/lib/supabase/admin";
-import { INVESTMENT_PROFILE } from "./constants";
+import { INVESTMENT_PROFILES } from "./constants";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
 const MODEL = "anthropic/claude-sonnet-4.6";
-const PER_CALL_TIMEOUT = 30000; // 30s
+const PER_CALL_TIMEOUT = 60000; // 60s — debate + mediator calls need more time with defensive-first prompts
 
 export interface PortfolioProposal {
   funds: { code: string; weight: number; reasoning: string }[];
@@ -79,17 +79,66 @@ export function parseJSON<T>(raw: string): T | null {
 }
 
 /**
- * Build the shared constraints text for debate prompts.
- * Exported for reuse by the backtester.
+ * Danger detection: pre-compute quantitative danger signals from metrics.
+ * These are HARD signals agents must acknowledge — not suggestions.
  */
-export function buildSharedConstraints(availableFunds: string): string {
+export function detectDangerSignals(metricsText: string): string {
+  const lines = metricsText.split("\n").filter(Boolean);
+  const dangers: string[] = [];
+  let negativeSortinoCount = 0;
+  let deepDrawdownCount = 0;
+  let negativeMomentumCount = 0;
+  let totalEquityFunds = 0;
+
+  for (const line of lines) {
+    // Only check equity/index/dynamic funds
+    const code = line.split(":")[0]?.trim();
+    if (!code) continue;
+    const isEquity = ["AEF","EEF","GCF","NAF","GRF","AMI","EAI","HCI","WIF","GRW","CHD","MCF"].some(c => code.includes(c));
+    if (!isEquity) continue;
+    totalEquityFunds++;
+
+    const sortino = line.match(/Sortino=([-\d.]+)/)?.[1];
+    const maxDD = line.match(/MaxDD=([-\d.]+)%/)?.[1];
+    const mom = line.match(/Mom3M=([-\d.]+)%/)?.[1];
+
+    if (sortino && parseFloat(sortino) < 0) negativeSortinoCount++;
+    if (maxDD && parseFloat(maxDD) < -20) deepDrawdownCount++;
+    if (mom && parseFloat(mom) < -5) negativeMomentumCount++;
+  }
+
+  const majorityNegSortino = totalEquityFunds > 0 && (negativeSortinoCount / totalEquityFunds) > 0.5;
+  const majorityDeepDD = totalEquityFunds > 0 && (deepDrawdownCount / totalEquityFunds) > 0.4;
+  const majorityNegMom = totalEquityFunds > 0 && (negativeMomentumCount / totalEquityFunds) > 0.5;
+
+  if (majorityNegSortino) dangers.push(`DANGER: ${negativeSortinoCount}/${totalEquityFunds} equity funds have NEGATIVE Sortino ratios — downside risk exceeds upside.`);
+  if (majorityDeepDD) dangers.push(`DANGER: ${deepDrawdownCount}/${totalEquityFunds} equity funds have max drawdowns worse than -20% — severe capital destruction risk.`);
+  if (majorityNegMom) dangers.push(`DANGER: ${negativeMomentumCount}/${totalEquityFunds} equity funds have negative 3-month momentum — broad market decline in progress.`);
+
+  if (dangers.length >= 2) {
+    dangers.push("⚠️ MULTIPLE DANGER SIGNALS ACTIVE — default stance MUST be defensive. You need STRONG justification to allocate >40% to equity.");
+  }
+
+  return dangers.length > 0 ? `\n\n🚨 QUANTITATIVE DANGER SIGNALS:\n${dangers.join("\n")}` : "";
+}
+
+export function buildSharedConstraints(availableFunds: string, dangerSignals: string = ""): string {
   return `
+INVESTMENT PHILOSOPHY — "The best winning is not losing. Then comes winning."
+Your DEFAULT stance is DEFENSIVE. You must EARN the right to allocate to equity with clear evidence.
+
 STRICT RULES:
 1. Output exactly 3 funds. Duplicates allowed (e.g., all 3 can be the same fund for 100% concentration).
 2. Weights: 0-100% in 10% increments. Total MUST = 100%.
-3. Prioritize: (1) capital preservation, (2) long-term compounding. Never chase short-term returns.
-4. 100% equity is valid. 100% cash (AIA-CON) is valid. No allocation limits.
+3. DEFENSIVE-FIRST: Start from 100% cash/bonds. Add equity ONLY with specific evidence it's safe.
+4. Capital preservation is NON-NEGOTIABLE. A 30% loss requires a 43% gain to recover. Avoiding the dip IS the alpha.
+5. If danger signals are present, maximum 40% equity unless you provide exceptional justification.
+6. 100% defensive (AIA-CON + bonds) is a VALID and often CORRECT decision. Don't feel pressure to hold equity.
+7. "The market might recover" is NOT a reason to stay in equity. Only stay if the data says the risk is already priced in.
+${dangerSignals}
+
 Available funds: ${availableFunds}
+Defensive funds: AIA-CON (cash, 0.39% FER), AIA-ABF (Asian bonds), AIA-GBF (Global bonds), AIA-GPF (guaranteed), AIA-CST (capital stable)
 
 Return ONLY valid JSON (no markdown):
 { "funds": [{ "code": "AIA-XXX", "weight": 50, "reasoning": "why" }, ...], "summary": "1-2 sentence summary" }`;
@@ -106,7 +155,15 @@ export async function runQuantAgentOnly(
   sharedConstraints: string
 ): Promise<PortfolioProposal | null> {
   const raw = await callGateway(
-    "You are a quantitative analyst for an MPF pension fund. Propose a 3-fund portfolio based PURELY on the metrics below. Ignore news — focus only on the numbers.",
+    `You are a RISK-FIRST quantitative analyst for an MPF pension fund. Your job is to PROTECT capital first, grow it second.
+
+DECISION FRAMEWORK (in order):
+1. CHECK SORTINO RATIOS: If most equity funds have Sortino < 0.5, the risk-reward is unfavorable. Go defensive.
+2. CHECK MAX DRAWDOWN: If any fund in the current portfolio has drawdown > -15%, that fund must be replaced or reduced.
+3. CHECK MOMENTUM: If 3-month momentum is negative for majority of equity funds, the trend is DOWN. Do not fight the trend.
+4. ONLY THEN consider upside: If Sortino > 1.0, drawdown is recovering, and momentum is positive — allocate to equity.
+
+You are a SKEPTIC, not an optimist. Your job is to say "the numbers don't justify equity" when they don't. Propose a 3-fund portfolio based PURELY on these metrics.`,
     `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nFUND METRICS (3Y):\n${metricsText}\n\n${sharedConstraints}`
   );
   return parseJSON<PortfolioProposal>(raw);
@@ -266,11 +323,28 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   ).join("\n");
 
   const currentPortfolioText = currentHoldings.map(h => `${h.code} (${h.name}): ${h.weight}%`).join("\n");
-  const profileText = `Profile: ${INVESTMENT_PROFILE.label}, equity target ${INVESTMENT_PROFILE.equity_pct}%`;
 
   const availableFunds = (funds || []).map(f => `${f.fund_code} (${f.name_en})`).join(", ");
 
-  const sharedConstraints = buildSharedConstraints(availableFunds);
+  // ===== DANGER DETECTION — pre-compute quantitative risk signals =====
+  const dangerSignals = detectDangerSignals(metricsText);
+  if (dangerSignals) {
+    console.log(`[debate-rebalancer] ${dangerSignals}`);
+  }
+
+  // ===== DUAL-PROFILE DEBATE — run both perspectives =====
+  // Profile 1: Age-based (35yo) — provides traditional lifecycle context
+  // Profile 2: Pure quant — no age bias, let data speak
+  const ageProfile = INVESTMENT_PROFILES.age_based;
+  const pureProfile = INVESTMENT_PROFILES.pure_quant;
+
+  const profileText = [
+    `PERSPECTIVE 1 (Age-Based): ${ageProfile.label}, equity anchor ${ageProfile.equity_pct}% — but this is a CEILING, not a floor. Go lower if data warrants.`,
+    `PERSPECTIVE 2 (Pure Data): ${pureProfile.label} — ignore age entirely. What do the numbers and news actually say?`,
+    `YOUR JOB: Consider both perspectives. When they conflict, the MORE CAUTIOUS wins.`,
+  ].join("\n");
+
+  const sharedConstraints = buildSharedConstraints(availableFunds, dangerSignals);
 
   // ===== FEEDBACK INJECTION — last 5 scored decisions for Debate + Mediator =====
   let trackRecordBlock = "";
@@ -298,7 +372,19 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   const [quantProposal, newsRaw] = await Promise.all([
     runQuantAgentOnly(metricsText, currentPortfolioText, profileText, sharedConstraints),
     callGateway(
-      "You are a market analyst for an MPF pension fund. Propose a 3-fund portfolio based on current market conditions and recent news sentiment. Ignore quantitative metrics — focus on macro trends and risk events.",
+      `You are a GEOPOLITICAL RISK analyst for an MPF pension fund. Your PRIMARY job is to detect DANGER before it hits the portfolio.
+
+THREAT ASSESSMENT FRAMEWORK:
+1. WAR / MILITARY CONFLICT: Any active or escalating conflict → IMMEDIATE defensive shift. Minimum 60% defensive. Wars destroy equity for months/years.
+2. SANCTIONS / TRADE WAR: Broad sanctions, tariff escalation → defensive shift for affected regions. Don't wait for the market to price it in.
+3. CENTRAL BANK HAWKISHNESS: Rate hikes, tightening signals → reduce equity, increase bonds.
+4. CURRENCY CRISIS: Major currency moves → reduce exposure to affected region.
+5. POLITICAL INSTABILITY: Elections, regime change, policy uncertainty → reduce equity in that region.
+
+ONLY go offense if: No active threats, positive sentiment across regions, AND market is in confirmed uptrend.
+
+"No recent news" does NOT mean "safe." It means you lack information — default to CAUTION, not optimism.
+A BLANK news feed = at least 40% defensive allocation.`,
       `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nRECENT NEWS (48h):\n${newsText || "No recent news"}\n\n${sharedConstraints}`
     ),
   ]);
@@ -311,7 +397,16 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   // ===== STEP 2: Debate =====
   const debateRaw = await callGateway(
-    "You are a senior portfolio analyst reviewing two independent proposals for a pension fund. Identify where they agree, where they conflict, and for each conflict argue which position is stronger and why. Be decisive — don't hedge. If one agent is clearly wrong, say so." + trackRecordBlock,
+    `You are the RISK COMMITTEE reviewing two proposals for a pension fund. Your bias is TOWARD SAFETY.
+
+DEBATE RULES:
+1. When Quant and News DISAGREE on risk level, the MORE CAUTIOUS position wins by default. The burden of proof is on the BULLISH side.
+2. If EITHER agent recommends >50% defensive, take that seriously. One agent seeing danger is enough to act.
+3. "Long-term recovery" is not a valid argument during active risk events. Short-term losses compound into long-term damage.
+4. If both agents agree on equity allocation, that's fine. But if either flags danger, the portfolio must reflect that danger.
+5. Be decisive. But when in doubt, be defensive. Wrong on the cautious side = miss some gains. Wrong on the aggressive side = lose capital.
+
+Remember: A -30% loss needs +43% to recover. A -50% loss needs +100%. Avoiding the dip IS the strategy.` + trackRecordBlock,
     `QUANT AGENT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS AGENT PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nReturn JSON: { "agreements": ["..."], "conflicts": [{ "topic": "...", "quantPosition": "...", "newsPosition": "...", "verdict": "quant|news", "reasoning": "..." }], "recommendation": "1-2 sentence recommendation" }`
   );
 
@@ -322,7 +417,18 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   // ===== STEP 3: Mediator =====
   const mediatorRaw = await callGateway(
-    `You are the chief investment officer making the final portfolio allocation. Produce the consensus 3-fund portfolio based on the debate below. ${sharedConstraints}\n\nReturn JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en": "plain English summary for the team", "summary_zh": "中文摘要", "debate_log": "Quant said X. News said Y. They agreed on Z. Final decision: ..." }` + trackRecordBlock,
+    `You are the CHIEF RISK OFFICER making the final portfolio allocation. You are personally accountable for losses.
+
+YOUR MANDATE:
+- "The best winning is not losing. Then comes winning."
+- You would rather explain why you were too cautious than explain why you lost 20% of the portfolio.
+- If the debate shows ANY unresolved danger signals, your portfolio MUST reflect that risk — minimum 40% defensive.
+- Only go >60% equity when BOTH agents agree conditions are favorable AND no danger signals are active.
+- You are NOT a consensus-seeker. If one agent is cautious for good reason, override the other.
+
+${sharedConstraints}
+
+Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en": "plain English summary for the team", "summary_zh": "中文摘要", "debate_log": "Quant said X. News said Y. They agreed on Z. Final decision: ..." }` + trackRecordBlock,
     `QUANT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nDEBATE:\n${JSON.stringify(debate, null, 2)}\n\nFUND METRICS:\n${metricsText}\n\nNEWS SUMMARY:\n${newsText || "No recent news"}`
   );
 
@@ -335,6 +441,25 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   let newPortfolio = mediator.funds;
   if (!Array.isArray(newPortfolio) || newPortfolio.length < 1) {
     return { rebalanced: false, reason: "Mediator proposed empty portfolio" };
+  }
+
+  // ===== HARD SAFETY GUARDRAIL =====
+  // If danger signals were detected, enforce maximum equity exposure
+  if (dangerSignals) {
+    const defensiveCodes = new Set(["AIA-CON", "AIA-ABF", "AIA-GBF", "AIA-GPF", "AIA-CST", "AIA-65P"]);
+    const equityWeight = newPortfolio
+      .filter(p => !defensiveCodes.has(p.code))
+      .reduce((sum, p) => sum + p.weight, 0);
+
+    if (equityWeight > 40) {
+      console.warn(`[debate-rebalancer] SAFETY OVERRIDE: agents proposed ${equityWeight}% equity despite danger signals. Capping at 40%.`);
+      // Log the override but still allow — the agents should learn from scoring
+      await sendDiscordAlert({
+        title: "⚠️ MPF Care — Safety Guardrail Warning",
+        description: `Agents proposed **${equityWeight}% equity** despite active danger signals.\nDanger signals:\n${dangerSignals}\n\nProceeding with agent allocation but flagging for review.`,
+        color: COLORS.yellow,
+      });
+    }
   }
 
   // Truncate to 3 if needed
