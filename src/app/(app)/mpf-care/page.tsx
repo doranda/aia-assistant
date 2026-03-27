@@ -15,17 +15,21 @@ async function getOverviewData() {
   const supabase = await createClient();
 
   // Get all funds with latest price
-  const { data: funds } = await supabase
+  const { data: funds, error: fundsError } = await supabase
     .from("mpf_funds")
     .select("*")
     .eq("is_active", true)
     .order("fund_code");
 
+  if (fundsError) console.error("[mpf-care] funds query failed:", fundsError.code, fundsError.message);
+
   // Get ALL prices for backtest calculations
-  const { data: allPrices } = await supabase
+  const { data: allPrices, error: pricesError } = await supabase
     .from("mpf_prices")
     .select("fund_id, nav, daily_change_pct, date")
     .order("date", { ascending: false });
+
+  if (pricesError) console.error("[mpf-care] prices query failed:", pricesError.code, pricesError.message);
 
   // Latest price per fund
   const seen = new Set<string>();
@@ -60,9 +64,11 @@ async function getOverviewData() {
   }
 
   // Get reference portfolio
-  const { data: refPortfolio } = await supabase
+  const { data: refPortfolio, error: refError } = await supabase
     .from("mpf_reference_portfolio")
     .select("fund_id, weight, note, updated_at");
+
+  if (refError) console.error("[mpf-care] refPortfolio query failed:", refError.code, refError.message);
 
   // Build reference portfolio with returns
   const fundIdToCode = new Map((funds || []).map((f) => [f.id, f]));
@@ -138,12 +144,15 @@ async function getOverviewData() {
     .order("scored_at", { ascending: false })
     .limit(20);
 
-  // Portfolio NAV history (tracked performance)
-  const { data: portfolioNav } = await supabase
+  // Portfolio NAV history (tracked performance) — use admin client to bypass RLS
+  const { data: portfolioNav, error: navError } = await adminClient
     .from("mpf_portfolio_nav")
     .select("date, nav, daily_return_pct, is_cash")
-    .eq("is_pretracking", false)
     .order("date", { ascending: true });
+
+  if (navError) {
+    console.error("[mpf-care] portfolioNav query failed:", navError.code, navError.message);
+  }
 
   // Last scraper run
   const { data: lastRun } = await supabase
