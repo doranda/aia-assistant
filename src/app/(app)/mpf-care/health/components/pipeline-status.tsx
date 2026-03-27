@@ -44,7 +44,7 @@ export function PipelineStatus({ data }: { data: PipelineRunStatus[] }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          <div className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 text-xs text-zinc-500">
+          <div className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 text-xs text-zinc-300">
             <div />
             {days.map((d) => (
               <div key={d} className="text-center">

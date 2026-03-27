@@ -14,12 +14,12 @@ export function NewsPipeline({ data }: { data: NewsPipelineDay[] }) {
       </CardHeader>
       <CardContent>
         {data.length === 0 ? (
-          <p className="text-sm text-zinc-500">No news data in the last 7 days</p>
+          <p className="text-sm text-zinc-300">No news data in the last 7 days</p>
         ) : (
           <div className="space-y-2">
             {data.map((day) => (
               <div key={day.date} className="flex items-center gap-3">
-                <span className="text-xs text-zinc-500 w-16 shrink-0">
+                <span className="text-xs text-zinc-300 w-16 shrink-0">
                   {new Date(day.date).toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}
                 </span>
                 <div className="flex-1 h-5 bg-zinc-800 rounded-sm overflow-hidden relative">

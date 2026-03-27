@@ -24,3 +24,6 @@ npm-debug.log*
 .autoresearch/results.tsv
 .vercel
 .env.production
+
+# supabase CLI cache
+supabase/.temp/

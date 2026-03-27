@@ -496,21 +496,29 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
     return { rebalanced: false, reason: "All funds at 0%" };
   }
 
-  // ===== APPLY =====
-  await supabase.from("mpf_reference_portfolio").delete().neq("fund_id", "00000000-0000-0000-0000-000000000000");
+  // ===== APPLY via T+2 Settlement Pipeline =====
+  const {
+    canSubmitSwitch,
+    submitSwitch,
+    requestEmergencySwitch,
+    isSameAllocation,
+    checkGPFLimit,
+  } = await import("./portfolio-tracker");
 
-  for (const p of activePortfolio) {
-    const fund_id = fundCodeToId.get(p.code);
-    if (!fund_id) continue;
-    await supabase.from("mpf_reference_portfolio").insert({
-      fund_id,
-      weight: p.weight,
-      note: `Debate consensus`,
-      updated_by: "debate-rebalancer",
-    });
+  // Check: same allocation = skip (no pointless cash drag)
+  const proposedAlloc = activePortfolio.map(p => ({ code: p.code, weight: p.weight }));
+  const currentAlloc = currentHoldings.map(h => ({ code: h.code, weight: h.weight }));
+  if (isSameAllocation(proposedAlloc, currentAlloc)) {
+    return { rebalanced: false, reason: "Proposed allocation identical to current — no switch needed" };
   }
 
-  // Full debate log
+  // Check: GPF 2/year hard limit
+  const gpfCheck = await checkGPFLimit(proposedAlloc);
+  if (gpfCheck.blocked) {
+    return { rebalanced: false, reason: gpfCheck.reason };
+  }
+
+  // Full debate log (needed for insight + emergency context)
   const fullDebateLog = [
     "## Quant Agent",
     quantProposal.summary,
@@ -528,7 +536,8 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
     mediator.debate_log,
   ].join("\n");
 
-  await supabase.from("mpf_insights").insert({
+  // Insert insight FIRST to get the ID for linking
+  const { data: insightRow } = await supabase.from("mpf_insights").insert({
     type: "rebalance_debate",
     trigger: "debate_rebalance",
     content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
@@ -539,26 +548,70 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
     }))],
     status: "completed",
     model: MODEL,
+  }).select("id").single();
+
+  const insightId = insightRow?.id || null;
+
+  // Check switch gate
+  const gate = await canSubmitSwitch();
+  const today = new Date().toISOString().split("T")[0];
+
+  if (!gate.allowed) {
+    if (gate.canOverride) {
+      // Cooldown period — request emergency approval
+      const topNews = (recentNews || [])
+        .filter((n: { is_high_impact: boolean }) => n.is_high_impact)
+        .slice(0, 3)
+        .map((n: { headline: string }) => n.headline);
+
+      const { switchId } = await requestEmergencySwitch({
+        decisionDate: today,
+        oldAllocation: currentAlloc,
+        newAllocation: proposedAlloc,
+        insightId,
+        debateSummary: mediator.summary_en,
+        dangerSignals: dangerSignals || "",
+        topNews,
+      });
+
+      return {
+        rebalanced: false,
+        reason: `Emergency switch requested (${gate.reason}). Awaiting approval. Switch ID: ${switchId}`,
+        debate_log: fullDebateLog,
+      };
+    }
+
+    // Hard block (pending switch in progress)
+    return { rebalanced: false, reason: gate.reason, debate_log: fullDebateLog };
+  }
+
+  // Gate passed — submit switch with T+2 settlement
+  const { sellDate, settlementDate } = await submitSwitch({
+    decisionDate: today,
+    oldAllocation: currentAlloc,
+    newAllocation: proposedAlloc,
+    insightId,
   });
 
-  // Discord notification for successful rebalance
+  // Discord notification
   const portfolioSummary = activePortfolio.map(p => `${p.code} ${p.weight}%`).join(" / ");
   await sendDiscordAlert({
-    title: "📊 MPF Care — Portfolio Rebalanced",
+    title: "📊 MPF Care — Switch Submitted (T+2)",
     description: [
       `**New allocation:** ${portfolioSummary}`,
+      `**Sells:** ${sellDate} | **Settles:** ${settlementDate}`,
       `**Reason:** ${mediator.summary_en.slice(0, 200)}`,
       "",
-      "**Debate summary:**",
+      "**Debate:**",
       `Agreements: ${debate.agreements.slice(0, 2).join("; ")}`,
       debate.conflicts.length > 0 ? `Conflicts: ${debate.conflicts.map(c => c.topic).join(", ")}` : "No conflicts",
     ].join("\n"),
     color: COLORS.green,
-  }).catch(() => {}); // Don't fail rebalance if Discord fails
+  }).catch(() => {});
 
   return {
     rebalanced: true,
-    reason: mediator.summary_en,
+    reason: `Switch submitted. Sells ${sellDate}, settles ${settlementDate}. ${mediator.summary_en}`,
     debate_log: fullDebateLog,
   };
 }

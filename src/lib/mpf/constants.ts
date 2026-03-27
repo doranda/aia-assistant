@@ -151,3 +151,24 @@ export const SCREENER_CATEGORIES = {
 // Discontinued funds — terminated by AIA, no longer in the active lineup (as of June 2023)
 // Historical price data kept in DB for backtesting purposes only
 export const DISCONTINUED_FUNDS = ["AIA-HEF", "AIA-JEF", "AIA-FCS", "AIA-FGR", "AIA-FSG"];
+
+// ===== Portfolio Tracking — T+2 Settlement =====
+
+// Portfolio synthetic fund base
+export const PORTFOLIO_BASE_NAV = 100.0;
+
+// Settlement: submit T, sell T+1, buy T+2 (working days, forward pricing)
+export const SETTLEMENT_DAYS = 2; // T+2 total (sell at T+1, buy at T+2)
+
+// 7-day cooldown (calendar days) after settlement before next auto-switch
+export const COOLDOWN_DAYS = 7;
+
+// Cutoff: 3:30pm HKT (30-min buffer before AIA's 4pm cutoff)
+// If rebalancer fires after this, decision_date = next working day
+export const CUTOFF_HOUR_HKT = 15.5; // 15:30 = 3:30pm
+
+// AIA Guaranteed Portfolio: hard limit of 2 switches per calendar year
+export const GPF_MAX_SWITCHES_PER_YEAR = 2;
+
+// Long weekend flag: if T+2 is more than this many calendar days away, flag for review
+export const LONG_WEEKEND_THRESHOLD_DAYS = 4;

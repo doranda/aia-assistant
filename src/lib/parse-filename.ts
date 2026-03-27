@@ -20,7 +20,10 @@ const TAG_KEYWORDS: Record<string, string> = {
 };
 
 const CATEGORY_HINTS: Record<string, DocumentCategory> = {
-  brochure: "brochure", bro: "brochure",
+  launchpad: "launchpad", launch: "launchpad", "launch pad": "launchpad",
+  memo: "memo", memorandum: "memo",
+  knowledge: "knowledge", guide: "knowledge",
+  promotion: "promotions", promo: "promotions", campaign: "promotions",
   premium: "premium_table", "premium table": "premium_table", rate: "premium_table",
   comparison: "comparison", compare: "comparison", vs: "comparison",
   guideline: "underwriting_guideline", underwriting: "underwriting_guideline",
@@ -49,7 +52,7 @@ export function parseFilename(filename: string) {
   }
 
   // Detect category
-  let category: DocumentCategory = "brochure";
+  let category: DocumentCategory = "other";
   for (const [hint, cat] of Object.entries(CATEGORY_HINTS)) {
     if (lower.includes(hint)) {
       category = cat;

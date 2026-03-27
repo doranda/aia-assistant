@@ -183,3 +183,67 @@ export interface FundPerformance {
 export interface NewsWithFunds extends MpfNews {
   affected_funds: { fund_code: string; name_en: string; impact_note: string | null }[];
 }
+
+// ===== Portfolio Tracking (T+2 Settlement) =====
+
+export type SwitchStatus = "awaiting_approval" | "pending" | "settled" | "expired";
+
+export interface FundAllocation {
+  code: string;
+  weight: number;
+}
+
+export interface FundHolding {
+  code: string;
+  units: number;
+  weight: number;
+}
+
+export interface PendingSwitch {
+  id: string;
+  submitted_at: string;
+  decision_date: string;
+  sell_date: string;
+  settlement_date: string | null; // null if awaiting_approval
+  status: SwitchStatus;
+  old_allocation: FundAllocation[];
+  new_allocation: FundAllocation[];
+  sell_nav_total: number | null;
+  buy_nav_total: number | null;
+  cash_drag_days: number | null;
+  insight_id: string | null;
+  is_emergency: boolean;
+  expires_at: string | null;
+  confirmation_token: string | null;
+  created_at: string;
+  settled_at: string | null;
+}
+
+export interface PortfolioTransaction {
+  id: string;
+  switch_id: string;
+  side: "sell" | "buy";
+  fund_code: string;
+  weight: number;
+  units: number | null;  // null on sell legs until T+1 NAV available
+  nav_at_execution: number | null;
+  created_at: string;
+}
+
+export interface PortfolioNavPoint {
+  date: string;
+  nav: number;
+  daily_return_pct: number | null;
+  holdings: FundHolding[];
+  is_cash: boolean;
+  is_pretracking: boolean;
+  created_at: string;
+}
+
+export interface SwitchGateResult {
+  allowed: boolean;
+  reason: string;
+  canOverride?: boolean;
+  lastSettlement?: string;
+  pendingSwitch?: PendingSwitch;
+}

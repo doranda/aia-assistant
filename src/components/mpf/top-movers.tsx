@@ -16,7 +16,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
     .slice(0, 5);
 
   if (gainers.length === 0 && losers.length === 0) {
-    return <p className="text-sm text-zinc-500">No price movements recorded yet.</p>;
+    return <p className="text-sm text-zinc-300">No price movements recorded yet.</p>;
   }
 
   return (
@@ -31,7 +31,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
             <li key={fund.id} className="flex items-center justify-between py-3 first:pt-0">
               <div>
                 <span className="text-[13px] text-zinc-300">{fund.name_en}</span>
-                <span className="text-[11px] text-zinc-600 ml-2 font-mono">{fund.fund_code}</span>
+                <span className="text-[11px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
               </div>
               <span className="text-[13px] font-mono font-semibold tabular-nums text-emerald-400">
                 +{fund.daily_change_pct?.toFixed(2)}%
@@ -39,7 +39,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
             </li>
           ))}
           {gainers.length === 0 && (
-            <li className="py-3 text-[13px] text-zinc-600">No gainers</li>
+            <li className="py-3 text-[13px] text-zinc-400">No gainers</li>
           )}
         </ol>
       </div>
@@ -54,7 +54,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
             <li key={fund.id} className="flex items-center justify-between py-3 first:pt-0">
               <div>
                 <span className="text-[13px] text-zinc-300">{fund.name_en}</span>
-                <span className="text-[11px] text-zinc-600 ml-2 font-mono">{fund.fund_code}</span>
+                <span className="text-[11px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
               </div>
               <span className="text-[13px] font-mono font-semibold tabular-nums text-red-400">
                 {fund.daily_change_pct?.toFixed(2)}%
@@ -62,7 +62,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
             </li>
           ))}
           {losers.length === 0 && (
-            <li className="py-3 text-[13px] text-zinc-600">No losers</li>
+            <li className="py-3 text-[13px] text-zinc-400">No losers</li>
           )}
         </ol>
       </div>

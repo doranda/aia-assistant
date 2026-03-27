@@ -29,7 +29,7 @@ export function MissingData({ data }: { data: DayCoverage[] }) {
             />
           ))}
         </div>
-        <div className="flex gap-4 mt-3 text-xs text-zinc-500">
+        <div className="flex gap-4 mt-3 text-xs text-zinc-300">
           <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-emerald-500 inline-block" /> Complete</span>
           <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-yellow-500 inline-block" /> Partial</span>
           <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-red-500 inline-block" /> Missing</span>

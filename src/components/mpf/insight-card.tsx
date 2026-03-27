@@ -23,7 +23,7 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
           )}>
             {typeLabel}
           </span>
-          <span className="text-[11px] font-mono text-zinc-600">
+          <span className="text-[11px] font-mono text-zinc-400">
             {new Date(insight.created_at).toLocaleDateString("en-HK", {
               year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
             })}
@@ -38,7 +38,7 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
             onClick={() => setLang("en")}
             className={cn(
               "text-[11px] font-mono px-2 py-0.5 rounded transition-colors cursor-pointer",
-              lang === "en" ? "bg-zinc-800 text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+              lang === "en" ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
             EN
@@ -49,7 +49,7 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
             onClick={() => setLang("zh")}
             className={cn(
               "text-[11px] font-mono px-2 py-0.5 rounded transition-colors cursor-pointer",
-              lang === "zh" ? "bg-zinc-800 text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+              lang === "zh" ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
             繁中
@@ -62,7 +62,7 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
       </div>
 
       {insight.trigger && (
-        <div className="mt-4 text-[10px] font-mono text-zinc-700">
+        <div className="mt-4 text-[10px] font-mono text-zinc-500">
           Trigger: {insight.trigger}
         </div>
       )}

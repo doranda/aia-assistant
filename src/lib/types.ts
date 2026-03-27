@@ -14,12 +14,16 @@ export interface DeleteRequest {
 }
 
 export type DocumentCategory =
-  | "brochure"
+  | "launchpad"
+  | "memo"
+  | "knowledge"
+  | "promotions"
   | "premium_table"
   | "comparison"
   | "email_attachment"
   | "underwriting_guideline"
-  | "claim_guideline";
+  | "claim_guideline"
+  | "other";
 
 export type DocumentSource = "upload" | "email" | "web_search";
 

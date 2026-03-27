@@ -5,12 +5,16 @@ import type { DocumentCategory } from "@/lib/types";
 
 const filters: { label: string; value: DocumentCategory | "all" }[] = [
   { label: "All", value: "all" },
-  { label: "Brochures", value: "brochure" },
+  { label: "Launchpad", value: "launchpad" },
+  { label: "Memo", value: "memo" },
+  { label: "Knowledge", value: "knowledge" },
+  { label: "Promotions", value: "promotions" },
   { label: "Premium Tables", value: "premium_table" },
   { label: "Comparisons", value: "comparison" },
   { label: "UW Guidelines", value: "underwriting_guideline" },
   { label: "Claim Guidelines", value: "claim_guideline" },
   { label: "Email", value: "email_attachment" },
+  { label: "Other", value: "other" },
 ];
 
 interface DocumentFiltersProps {

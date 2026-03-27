@@ -24,7 +24,7 @@ export function OutlierAlerts({ data }: { data: OutlierFund[] }) {
               >
                 <div>
                   <span className="text-sm font-medium">{fund.fund_code}</span>
-                  <span className="text-xs text-zinc-500 ml-2">{fund.name_en}</span>
+                  <span className="text-xs text-zinc-300 ml-2">{fund.name_en}</span>
                 </div>
                 <span
                   className={`text-sm font-mono ${fund.daily_change_pct > 0 ? "text-emerald-400" : "text-red-400"}`}

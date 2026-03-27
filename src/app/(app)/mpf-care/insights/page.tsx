@@ -30,7 +30,7 @@ export default async function MpfInsightsPage() {
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
       <header className="mb-12">
         <div className="flex items-center gap-3 mb-2">
-          <a href="/mpf-care" className="text-[11px] font-mono text-zinc-600 hover:text-zinc-400 transition-colors">
+          <a href="/mpf-care" className="text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors">
             ← MPF Care
           </a>
         </div>
@@ -39,7 +39,7 @@ export default async function MpfInsightsPage() {
             <h1 className="text-[clamp(1.5rem,3vw,2.25rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.1]">
               Rebalancing Insights
             </h1>
-            <p className="text-sm text-zinc-500 mt-2 font-mono">
+            <p className="text-sm text-zinc-300 mt-2 font-mono">
               AI-generated AIA MPF Care Profiles
             </p>
           </div>
@@ -51,7 +51,7 @@ export default async function MpfInsightsPage() {
 
       <div className="mt-8 space-y-6">
         {(!insights || insights.length === 0) ? (
-          <p className="text-sm text-zinc-500 py-8">No insights generated yet. {canGenerate ? "Click \"Generate Fresh Insight\" to create one." : ""}</p>
+          <p className="text-sm text-zinc-300 py-8">No insights generated yet. {canGenerate ? "Click \"Generate Fresh Insight\" to create one." : ""}</p>
         ) : (
           (insights as MpfInsight[]).map((insight) => (
             <InsightCard key={insight.id} insight={insight} />

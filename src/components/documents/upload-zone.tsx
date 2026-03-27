@@ -23,12 +23,16 @@ import { parseFilename } from "@/lib/parse-filename";
 import type { DocumentCategory } from "@/lib/types";
 
 const categories: { label: string; value: DocumentCategory }[] = [
-  { label: "Brochure", value: "brochure" },
+  { label: "Launchpad", value: "launchpad" },
+  { label: "Memo", value: "memo" },
+  { label: "Knowledge", value: "knowledge" },
+  { label: "Promotions", value: "promotions" },
   { label: "Premium Table", value: "premium_table" },
   { label: "Comparison", value: "comparison" },
   { label: "Email Attachment", value: "email_attachment" },
   { label: "Underwriting Guideline", value: "underwriting_guideline" },
   { label: "Claim Guideline", value: "claim_guideline" },
+  { label: "Other", value: "other" },
 ];
 
 interface PendingFile {

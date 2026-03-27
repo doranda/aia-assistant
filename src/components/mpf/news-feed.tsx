@@ -40,7 +40,7 @@ export function NewsFeed({ news }: { news: MpfNews[] }) {
 
       {/* Results */}
       {filtered.length === 0 ? (
-        <p className="text-sm text-zinc-500">No news matches your filters.</p>
+        <p className="text-sm text-zinc-300">No news matches your filters.</p>
       ) : (
         <ol className="space-y-0 divide-y divide-zinc-800/60">
           {filtered.map((n) => (
@@ -56,22 +56,22 @@ export function NewsFeed({ news }: { news: MpfNews[] }) {
                     {n.headline}
                   </a>
                   {n.summary && (
-                    <p className="text-[12px] text-zinc-500 mt-1 line-clamp-2">{n.summary}</p>
+                    <p className="text-[12px] text-zinc-300 mt-1 line-clamp-2">{n.summary}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <span className="text-[10px] font-mono text-zinc-600">{n.source}</span>
-                    <span className="text-[10px] font-mono text-zinc-700">|</span>
-                    <span className="text-[10px] font-mono text-zinc-600">
+                    <span className="text-[10px] font-mono text-zinc-400">{n.source}</span>
+                    <span className="text-[10px] font-mono text-zinc-500">|</span>
+                    <span className="text-[10px] font-mono text-zinc-400">
                       {new Date(n.published_at).toLocaleDateString("en-HK")}
                     </span>
                     <span className={`text-[10px] font-mono ${
                       n.sentiment === "positive" ? "text-emerald-500" :
-                      n.sentiment === "negative" ? "text-red-500" : "text-zinc-600"
+                      n.sentiment === "negative" ? "text-red-500" : "text-zinc-400"
                     }`}>
                       {n.sentiment}
                     </span>
                     {n.impact_tags.map((tag) => (
-                      <span key={tag} className="text-[10px] font-mono text-zinc-500 bg-zinc-800/60 px-1.5 py-0.5 rounded">
+                      <span key={tag} className="text-[10px] font-mono text-zinc-300 bg-zinc-800/60 px-1.5 py-0.5 rounded">
                         {tag}
                       </span>
                     ))}
@@ -104,7 +104,7 @@ function FilterGroup<T extends string>({
 }) {
   return (
     <div>
-      <span className="text-[10px] font-mono text-zinc-600 block mb-1.5">{label}</span>
+      <span className="text-[10px] font-mono text-zinc-400 block mb-1.5">{label}</span>
       <div className="flex gap-0.5" role="tablist" aria-label={`Filter by ${label}`}>
         {items.map((item) => (
           <button
@@ -116,7 +116,7 @@ function FilterGroup<T extends string>({
               "text-[11px] font-mono px-2.5 py-1 rounded-md transition-colors cursor-pointer",
               value === item.value
                 ? "bg-zinc-800 text-zinc-200"
-                : "text-zinc-600 hover:text-zinc-400"
+                : "text-zinc-400 hover:text-zinc-200"
             )}
           >
             {item.label}

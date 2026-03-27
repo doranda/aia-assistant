@@ -25,7 +25,7 @@ export function FundHeatmap({ funds }: { funds: FundWithLatestPrice[] }) {
     <div className="space-y-6">
       {Object.entries(grouped).map(([category, catFunds]) => (
         <section key={category}>
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300 mb-3">
             {FUND_CATEGORY_LABELS[category as FundCategory] || category}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -44,7 +44,7 @@ export function FundHeatmap({ funds }: { funds: FundWithLatestPrice[] }) {
                     "bg-zinc-900/40 border-zinc-800/30"
                   )}
                 >
-                  <div className="text-[11px] font-mono text-zinc-500">{fund.fund_code}</div>
+                  <div className="text-[11px] font-mono text-zinc-300">{fund.fund_code}</div>
                   <div className="text-[12px] text-zinc-300 mt-0.5 truncate">{fund.name_en}</div>
                   <div
                     className={cn(
