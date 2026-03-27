@@ -29,7 +29,21 @@ function returnColor(val: number | null): string {
 }
 
 export function PortfolioTrackRecord({ navHistory, inceptionDate }: PortfolioTrackRecordProps) {
-  if (navHistory.length === 0) return null;
+  if (navHistory.length === 0) {
+    return (
+      <section aria-labelledby="track-record-heading" className="mb-8">
+        <h2
+          id="track-record-heading"
+          className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300 mb-2"
+        >
+          Portfolio Track Record
+        </h2>
+        <p className="text-[11px] text-zinc-400 font-mono">
+          NAV tracking begins on the next working day when the portfolio-nav cron runs.
+        </p>
+      </section>
+    );
+  }
 
   const latest = navHistory[navHistory.length - 1];
   const first = navHistory[0];

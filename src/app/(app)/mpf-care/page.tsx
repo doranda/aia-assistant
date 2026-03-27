@@ -221,18 +221,12 @@ export default async function MpfCarePage() {
         </a>
       </nav>
 
-      {/* Portfolio Track Record — actual tracked NAV since inception */}
-      {portfolioNav.length > 0 && (
-        <div className="mt-12">
-          <PortfolioTrackRecord
-            navHistory={portfolioNav}
-            inceptionDate={portfolioNav[0]?.date || null}
-          />
-        </div>
-      )}
-
-      {/* Allocation Performance — individual fund returns weighted by portfolio */}
-      <div className={portfolioNav.length > 0 ? "mt-0" : "mt-12"}>
+      {/* Portfolio Track Record (top) + Allocation Performance (bottom) */}
+      <div className="mt-12">
+        <PortfolioTrackRecord
+          navHistory={portfolioNav}
+          inceptionDate={portfolioNav[0]?.date || null}
+        />
         <PortfolioReference
           funds={portfolioFunds}
           priceDate={priceDate}
