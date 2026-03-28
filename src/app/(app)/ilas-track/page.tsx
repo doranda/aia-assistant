@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ILAS_CATEGORY_LABELS, ILAS_INSIGHT_DISCLAIMER } from "@/lib/ilas/constants";
 import type { IlasFund, IlasFundCategory, IlasFundWithLatestPrice } from "@/lib/ilas/types";
 import { IlasPortfolioReference } from "@/components/ilas/portfolio-reference";
+import { IlasPortfolioTrackRecord } from "@/components/ilas/portfolio-track-record";
 import { TrendingUp, BarChart3, Newspaper, Filter, PieChart } from "lucide-react";
 import Link from "next/link";
 
@@ -82,6 +83,15 @@ async function getIlasData(isDistribution: boolean) {
 
   if (portfolioError) console.error("[ilas-track] portfolio query failed:", portfolioError.code, portfolioError.message);
 
+  // 8. Get portfolio NAV history for current tab
+  const { data: portfolioNav, error: navError } = await supabase
+    .from("ilas_portfolio_nav")
+    .select("date, nav, daily_return_pct, is_cash")
+    .eq("portfolio_type", portfolioType)
+    .order("date", { ascending: true });
+
+  if (navError) console.error("[ilas-track] portfolio nav query failed:", navError.code, navError.message);
+
   // Build portfolio funds with joined data
   const portfolioFunds = (portfolioRows || [])
     .map((row) => {
@@ -112,6 +122,7 @@ async function getIlasData(isDistribution: boolean) {
     accCount: accCount || 0,
     disCount: disCount || 0,
     portfolioFunds,
+    portfolioNav,
     portfolioType: portfolioType as "accumulation" | "distribution",
     portfolioUpdatedAt,
   };
@@ -285,7 +296,7 @@ export default async function IlasTrackPage({
 }) {
   const params = await searchParams;
   const isDistribution = params.tab === "distribution";
-  const { fundsWithPrices, latestDate, accCount, disCount, portfolioFunds, portfolioType, portfolioUpdatedAt } = await getIlasData(isDistribution);
+  const { fundsWithPrices, latestDate, accCount, disCount, portfolioFunds, portfolioNav, portfolioType, portfolioUpdatedAt } = await getIlasData(isDistribution);
 
   return (
     <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 xl:py-24">
@@ -368,6 +379,15 @@ export default async function IlasTrackPage({
         </div>
         <IlasTopMovers funds={fundsWithPrices} />
       </section>
+
+      {/* Portfolio Track Record */}
+      {portfolioNav && portfolioNav.length > 0 && (
+        <IlasPortfolioTrackRecord
+          navHistory={portfolioNav}
+          portfolioType={portfolioType}
+          inceptionDate={portfolioNav[0]?.date ?? null}
+        />
+      )}
 
       {/* Reference Portfolio */}
       {portfolioFunds.length > 0 && (
