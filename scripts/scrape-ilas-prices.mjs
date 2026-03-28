@@ -98,13 +98,13 @@ async function scrape() {
           const dateRaw = cells[5]?.textContent?.trim() || "";
 
           // Parse currency + price
-          const cleaned = priceRaw.replace(/[▼▲\s]/g, "").trim();
+          const cleaned = priceRaw.replace(/[▼▲►◄\s]/g, "").trim();
           const priceMatch = cleaned.match(
-            /^(US\$|HK\$|RMB|EUR|GBP|JPY|AUD)(.+)$/
+            /^(US\$|HK\$|RMB|EUR€?|GBP|JPY|AUD)(.+)$/
           );
-          const bidCleaned = bidRaw.replace(/[▼▲\s]/g, "").trim();
+          const bidCleaned = bidRaw.replace(/[▼▲►◄\s]/g, "").trim();
           const bidMatch = bidCleaned.match(
-            /^(US\$|HK\$|RMB|EUR|GBP|JPY|AUD)(.+)$/
+            /^(US\$|HK\$|RMB|EUR€?|GBP|JPY|AUD)(.+)$/
           );
 
           // Parse date MM/DD/YYYY → YYYY-MM-DD
@@ -116,7 +116,7 @@ async function scrape() {
               offer_price: parseFloat(priceMatch[2]),
               bid_price: bidMatch ? parseFloat(bidMatch[2]) : parseFloat(priceMatch[2]),
               valuation_date: `${dateMatch[3]}-${dateMatch[1]}-${dateMatch[2]}`,
-              currency: priceMatch[1],
+              currency: priceMatch[1].replace("€", ""),  // EUR€ → EUR
               daily_change_pct: null,
             });
           }

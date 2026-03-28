@@ -149,9 +149,13 @@ export async function upsertIlasPrices(
     }
 
     const rows = [];
+    const skippedCodes: string[] = [];
     for (const p of group) {
       const fundId = fundMap.get(p.fund_code);
-      if (!fundId) continue;
+      if (!fundId) {
+        skippedCodes.push(p.fund_code);
+        continue;
+      }
 
       const prevNav = prevMap.get(fundId);
       const dailyChange =
@@ -170,16 +174,23 @@ export async function upsertIlasPrices(
       });
     }
 
-    if (rows.length > 0) {
+    if (skippedCodes.length > 0) {
+      console.warn(`[ilas-scraper] Skipped ${skippedCodes.length} unknown codes: ${skippedCodes.join(", ")}`);
+    }
+
+    // Upsert in chunks of 50 to avoid payload size limits
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + CHUNK_SIZE);
       const { error } = await supabase
         .from("ilas_prices")
-        .upsert(rows, { onConflict: "fund_id,date" });
+        .upsert(chunk, { onConflict: "fund_id,date" });
 
       if (error) {
-        console.error("[ilas-scraper] Batch upsert failed:", error.message);
-        errCount += rows.length;
+        console.error(`[ilas-scraper] Chunk ${i}-${i + chunk.length} failed:`, error.code, error.message);
+        errCount += chunk.length;
       } else {
-        inserted += rows.length;
+        inserted += chunk.length;
       }
     }
   }
