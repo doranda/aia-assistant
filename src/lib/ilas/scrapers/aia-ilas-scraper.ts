@@ -1,11 +1,11 @@
 // src/lib/ilas/scrapers/aia-ilas-scraper.ts
-// Scrapes ILAS fund prices from AIA website.
-// The ILAP API (getFundPerformance/ILAP/) returns 400, so we scrape the HTML page.
+// Fetches ILAS fund prices from AIA's CorpWS API.
+// Replaces the old HTML scraper — no browser, no Playwright needed.
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const AIA_FUND_PAGE =
-  "https://www.aia.com.hk/en/help-and-support/individuals/investment-information/investment-options-prices.html";
+const AIA_FUND_INFO_URL =
+  "https://www1.aia.com.hk/CorpWS/Investment/Get/FundInfo2/";
 
 interface ScrapedPrice {
   fund_code: string;
@@ -16,26 +16,72 @@ interface ScrapedPrice {
   daily_change_pct: number | null;
 }
 
-function parsePrice(raw: string): { currency: string; price: number } | null {
+/**
+ * Extract numeric price from AIA's HTML-formatted price fields.
+ * Example input: `<font color='#D31145'>US$[19.8800]</font>`
+ * Returns: { currency: "USD", price: 19.88 }
+ */
+function parseHtmlPrice(raw: unknown): { currency: string; price: number } | null {
   if (!raw) return null;
-  const cleaned = raw.replace(/[▼▲\s]/g, "").trim();
-  const match = cleaned.match(/^(US\$|HK\$|RMB|EUR|GBP|JPY|AUD)(.+)$/);
-  if (!match) return null;
-  const price = parseFloat(match[2]);
-  if (isNaN(price)) return null;
-  return { currency: match[1], price };
-}
+  const str = String(raw);
 
-function parseValuationDate(raw: string): string | null {
-  if (!raw) return null;
-  const match = raw.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  // Strip HTML tags
+  const stripped = str.replace(/<[^>]*>/g, "").trim();
+  if (!stripped) return null;
+
+  // Match currency prefix + bracketed or plain number
+  // Patterns: "US$[19.8800]", "HK$12.3400", "US$19.8800", "RMB[5.1200]"
+  const match = stripped.match(
+    /^(US\$|HK\$|RMB|EUR|GBP|JPY|AUD|CAD|SGD|NZD)\[?([\d.]+)\]?$/
+  );
   if (!match) return null;
-  return `${match[3]}-${match[1]}-${match[2]}`;
+
+  const price = parseFloat(match[2]);
+  if (isNaN(price) || price <= 0) return null;
+
+  // Normalise currency codes
+  const currencyMap: Record<string, string> = {
+    "US$": "USD",
+    "HK$": "HKD",
+    RMB: "RMB",
+    EUR: "EUR",
+    GBP: "GBP",
+    JPY: "JPY",
+    AUD: "AUD",
+    CAD: "CAD",
+    SGD: "SGD",
+    NZD: "NZD",
+  };
+  const currency = currencyMap[match[1]] ?? match[1];
+
+  return { currency, price };
 }
 
 /**
- * Scrape prices from the AIA website HTML table.
- * The page renders fund data server-side but may also load via AJAX.
+ * Parse a date string from AIA API.
+ * Handles: "03/27/2026" (MM/DD/YYYY) or "27/03/2026" (DD/MM/YYYY) or "2026-03-27"
+ * The API uses DD/MM/YYYY format.
+ * Returns: "2026-03-27" (YYYY-MM-DD)
+ */
+function parseValuationDate(raw: unknown): string | null {
+  if (!raw) return null;
+  const str = String(raw).trim();
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // DD/MM/YYYY (AIA's format)
+  const slashMatch = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slashMatch) {
+    return `${slashMatch[3]}-${slashMatch[2]}-${slashMatch[1]}`;
+  }
+
+  return null;
+}
+
+/**
+ * Scrape ILAS fund prices from AIA's CorpWS API.
+ * Fetches FundInfo2 for the TMP2 scheme (covers all 142 funds).
  */
 export async function scrapeILASPrices(): Promise<{
   prices: ScrapedPrice[];
@@ -45,60 +91,97 @@ export async function scrapeILASPrices(): Promise<{
   const prices: ScrapedPrice[] = [];
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const url = `${AIA_FUND_INFO_URL}?fund_cat=TMP2&fund_type=&fund_house=&fund_code=&name=&lang=en`;
 
-    const res = await fetch(AIA_FUND_PAGE, {
-      signal: controller.signal,
+    const res = await fetch(url, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        Accept: "text/html,application/xhtml+xml",
+        "User-Agent": "Mozilla/5.0 (compatible; AIA-Hub/1.0)",
+        Accept: "application/json",
       },
+      signal: AbortSignal.timeout(10000),
     });
-    clearTimeout(timeout);
 
     if (!res.ok) {
-      errors.push(`AIA page returned ${res.status}`);
+      errors.push(`CorpWS API returned ${res.status}: ${res.statusText}`);
       return { prices, errors };
     }
 
-    const html = await res.text();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await res.json();
 
-    // Parse table rows from server-rendered HTML
-    const allRows = html.match(/<tbody[\s\S]*?<\/tbody>/gi) || [];
-    if (allRows.length > 0) {
-      const trRegex = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
-      const trs = (allRows[0] ?? "").match(trRegex) || [];
-      for (const tr of trs) {
-        const cells: string[] = [];
-        const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-        let m;
-        while ((m = tdRegex.exec(tr)) !== null) {
-          cells.push(m[1].replace(/<[^>]*>/g, "").trim());
-        }
-        if (cells.length >= 6) {
-          const code = cells[1]?.trim();
-          const offerParsed = parsePrice(cells[3]);
-          const bidParsed = parsePrice(cells[4]);
-          const date = parseValuationDate(cells[5]);
+    // The API returns an array of fund objects (or wrapped in a top-level key)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items: any[] = Array.isArray(data)
+      ? data
+      : data?.fundList ?? data?.data ?? data?.funds ?? [];
 
-          if (code && offerParsed && date) {
-            prices.push({
-              fund_code: code,
-              offer_price: offerParsed.price,
-              bid_price: bidParsed?.price || offerParsed.price,
-              valuation_date: date,
-              currency: offerParsed.currency,
-              daily_change_pct: null,
-            });
-          }
-        }
+    if (items.length === 0) {
+      errors.push(
+        `CorpWS API returned no funds. Response keys: ${typeof data === "object" && data ? Object.keys(data).join(", ") : typeof data}`
+      );
+      return { prices, errors };
+    }
+
+    for (const item of items) {
+      try {
+        const fundCode: string = item.fund_code ?? item.fundCode ?? "";
+        if (!fundCode) continue;
+
+        // Parse offer and bid prices (may contain HTML font tags)
+        const offerParsed = parseHtmlPrice(
+          item.offerPrice ?? item.offer_price ?? item.bidPrice ?? item.bid_price
+        );
+        const bidParsed = parseHtmlPrice(
+          item.bidPrice ?? item.bid_price ?? item.offerPrice ?? item.offer_price
+        );
+
+        if (!offerParsed && !bidParsed) continue;
+
+        // Parse valuation date
+        const valDate = parseValuationDate(
+          item.valuationDate ?? item.valuation_date ?? item.priceDate
+        );
+        if (!valDate) continue;
+
+        // Daily change percentage
+        const ddChange = item.dd_change ?? item.dailyChange ?? item.daily_change_pct;
+        const dailyChangePct =
+          ddChange !== null && ddChange !== undefined && ddChange !== ""
+            ? parseFloat(String(ddChange))
+            : null;
+
+        // Currency from the parsed price, or from a dedicated field
+        const currency =
+          offerParsed?.currency ??
+          bidParsed?.currency ??
+          String(item.currency ?? "USD");
+
+        prices.push({
+          fund_code: fundCode,
+          offer_price: offerParsed?.price ?? bidParsed!.price,
+          bid_price: bidParsed?.price ?? offerParsed!.price,
+          valuation_date: valDate,
+          currency,
+          daily_change_pct:
+            dailyChangePct !== null && !isNaN(dailyChangePct)
+              ? dailyChangePct
+              : null,
+        });
+      } catch (itemErr) {
+        errors.push(
+          `Failed to parse fund ${item.fund_code ?? "unknown"}: ${itemErr instanceof Error ? itemErr.message : "Unknown"}`
+        );
       }
     }
 
     if (prices.length === 0) {
-      errors.push("No prices found in HTML — page likely loads data via AJAX (needs Playwright)");
+      errors.push(
+        `Parsed 0 prices from ${items.length} API records — check response format`
+      );
+    } else {
+      console.log(
+        `[ilas-scraper] Parsed ${prices.length} prices from ${items.length} API records`
+      );
     }
 
     return { prices, errors };
@@ -124,7 +207,11 @@ export async function upsertIlasPrices(
   const { data: funds, error: fundsErr } = await supabase
     .from("ilas_funds")
     .select("id, fund_code");
-  if (fundsErr) console.error("[ilas-scraper] Failed to fetch funds:", fundsErr.message);
+  if (fundsErr)
+    console.error(
+      "[ilas-scraper] Failed to fetch funds:",
+      fundsErr.message
+    );
   const fundMap = new Map((funds || []).map((f) => [f.fund_code, f.id]));
 
   // Group by date
@@ -143,7 +230,11 @@ export async function upsertIlasPrices(
       .lt("date", date)
       .order("date", { ascending: false })
       .limit(200);
-    if (prevErr) console.error("[ilas-scraper] Failed to fetch previous prices:", prevErr.message);
+    if (prevErr)
+      console.error(
+        "[ilas-scraper] Failed to fetch previous prices:",
+        prevErr.message
+      );
 
     const prevMap = new Map<string, number>();
     for (const pp of prevPrices || []) {
@@ -172,12 +263,14 @@ export async function upsertIlasPrices(
         daily_change_pct: dailyChange
           ? parseFloat(dailyChange.toFixed(4))
           : null,
-        source: "aia_website",
+        source: "aia_api",
       });
     }
 
     if (skippedCodes.length > 0) {
-      console.warn(`[ilas-scraper] Skipped ${skippedCodes.length} unknown codes: ${skippedCodes.join(", ")}`);
+      console.warn(
+        `[ilas-scraper] Skipped ${skippedCodes.length} unknown codes: ${skippedCodes.join(", ")}`
+      );
     }
 
     // Upsert in chunks of 50 to avoid payload size limits
@@ -189,7 +282,11 @@ export async function upsertIlasPrices(
         .upsert(chunk, { onConflict: "fund_id,date" });
 
       if (error) {
-        console.error(`[ilas-scraper] Chunk ${i}-${i + chunk.length} failed:`, error.code, error.message);
+        console.error(
+          `[ilas-scraper] Chunk ${i}-${i + chunk.length} failed:`,
+          error.code,
+          error.message
+        );
         errCount += chunk.length;
       } else {
         inserted += chunk.length;
@@ -211,7 +308,6 @@ export async function runILASPriceScrape(): Promise<{
   const { prices, errors } = await scrapeILASPrices();
 
   if (prices.length === 0) {
-    errors.push("No prices scraped. Page may require JS rendering.");
     return { scraped: 0, inserted: 0, errors };
   }
 
@@ -228,7 +324,11 @@ export async function runILASPriceScrape(): Promise<{
     records_processed: inserted,
     error_message: errors.length > 0 ? errors.join("; ") : null,
   });
-  if (logErr) console.error("[ilas-scraper] Failed to log scraper run:", logErr.message);
+  if (logErr)
+    console.error(
+      "[ilas-scraper] Failed to log scraper run:",
+      logErr.message
+    );
 
   return { scraped: prices.length, inserted, errors };
 }
