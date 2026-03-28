@@ -13,6 +13,7 @@ import { TrendingUp, Newspaper, Brain, Activity, BarChart3 } from "lucide-react"
 
 async function getOverviewData() {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   // Get all funds with latest price
   const { data: funds, error: fundsError } = await supabase
@@ -63,8 +64,8 @@ async function getOverviewData() {
     pp.sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  // Get reference portfolio
-  const { data: refPortfolio, error: refError } = await supabase
+  // Get reference portfolio — use admin client (RLS blocks user session on this table)
+  const { data: refPortfolio, error: refError } = await adminClient
     .from("mpf_reference_portfolio")
     .select("fund_id, weight, note, updated_at");
 
@@ -136,7 +137,6 @@ async function getOverviewData() {
     .single();
 
   // Recent rebalance scores (admin client bypasses RLS)
-  const adminClient = createAdminClient();
   const { data: recentScores } = await adminClient
     .from("mpf_rebalance_scores")
     .select("*")
