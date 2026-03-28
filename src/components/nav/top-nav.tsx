@@ -3,13 +3,13 @@
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, MessageSquare, ShieldCheck, FileText, BookOpen, Users, TrendingUp } from "lucide-react";
+import { LayoutDashboard, MessageSquare, BarChart3, FileText, BookOpen, Users, TrendingUp } from "lucide-react";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "MPF Care", href: "/mpf-care", icon: TrendingUp },
+  { label: "ILAS Track", href: "/ilas-track", icon: BarChart3 },
   { label: "Chat", href: "/chat", icon: MessageSquare },
-  { label: "Claim Check", href: "/claim-check", icon: ShieldCheck },
   { label: "Documents", href: "/documents", icon: FileText },
   { label: "FAQs", href: "/faqs", icon: BookOpen },
   { label: "Team", href: "/team", icon: Users },
