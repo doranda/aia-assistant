@@ -39,6 +39,10 @@
     {
       "path": "/api/ilas/cron/metrics",
       "schedule": "30 12 * * 1-5"
+    },
+    {
+      "path": "/api/ilas/cron/portfolio-nav",
+      "schedule": "30 12 * * 1-5"
     }
   ]
 }
