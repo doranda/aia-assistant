@@ -13,8 +13,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { id, title, category, company, tags } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { id, title, category, company, tags } = body as { id: string; title: string; category: string; company: string; tags: string[] };
 
   if (!id) {
     return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
@@ -51,7 +56,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+  }
   const file = formData.get("file") as File | null;
   const category = formData.get("category") as string;
   const company = formData.get("company") as string | null;
@@ -123,7 +133,13 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id, reason } = await request.json();
+  let deleteBody: Record<string, unknown>;
+  try {
+    deleteBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { id, reason } = deleteBody as { id: string; reason: string };
 
   if (!id) {
     return NextResponse.json({ error: "Document ID is required" }, { status: 400 });

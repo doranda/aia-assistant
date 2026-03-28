@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { canGenerateInsight } from "@/lib/permissions";
 import { InsightCard } from "@/components/mpf/insight-card";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
@@ -13,7 +14,9 @@ export default async function MpfInsightsPage() {
 
   if (!user) redirect("/login");
 
-  const { data: profile, error: profileErr } = await supabase
+  const adminClient = createAdminClient();
+
+  const { data: profile, error: profileErr } = await adminClient
     .from("profiles")
     .select("role")
     .eq("id", user.id)
@@ -24,7 +27,7 @@ export default async function MpfInsightsPage() {
   const role = (profile?.role || "agent") as UserRole;
   const canGenerate = canGenerateInsight(role);
 
-  const { data: insights, error: insightsErr } = await supabase
+  const { data: insights, error: insightsErr } = await adminClient
     .from("mpf_insights")
     .select("*")
     .eq("status", "completed")

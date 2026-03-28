@@ -1,8 +1,8 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { FileText, MessageSquare, MessagesSquare, BookOpen } from "lucide-react";
 
 async function getStats() {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const [docs, conversations, messages, faqs, popularQueries, mpfTopMovers, mpfLatestInsight] = await Promise.all([
     supabase.from("documents").select("id, status, created_at", { count: "exact" }).eq("is_deleted", false),
@@ -24,6 +24,14 @@ async function getStats() {
       .limit(1)
       .single(),
   ]);
+
+  if (docs.error) console.error("[dashboard] docs query error:", docs.error);
+  if (conversations.error) console.error("[dashboard] conversations query error:", conversations.error);
+  if (messages.error) console.error("[dashboard] messages query error:", messages.error);
+  if (faqs.error) console.error("[dashboard] faqs query error:", faqs.error);
+  if (popularQueries.error) console.error("[dashboard] popularQueries query error:", popularQueries.error);
+  if (mpfTopMovers.error) console.error("[dashboard] mpfTopMovers query error:", mpfTopMovers.error);
+  if (mpfLatestInsight.error && mpfLatestInsight.error.code !== "PGRST116") console.error("[dashboard] mpfLatestInsight query error:", mpfLatestInsight.error);
 
   const indexedDocs = docs.data?.filter((d) => d.status === "indexed").length || 0;
 

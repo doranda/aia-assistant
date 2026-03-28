@@ -1,5 +1,4 @@
 // src/app/(app)/mpf-care/page.tsx
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PortfolioReference } from "@/components/mpf/portfolio-reference";
 import { PortfolioTrackRecord } from "@/components/mpf/portfolio-track-record";
@@ -12,11 +11,10 @@ import type { FundWithLatestPrice, MpfNews, MpfInsight, RebalanceScore } from "@
 import { TrendingUp, Newspaper, Brain, Activity, BarChart3 } from "lucide-react";
 
 async function getOverviewData() {
-  const supabase = await createClient();
   const adminClient = createAdminClient();
 
   // Get all funds with latest price
-  const { data: funds, error: fundsError } = await supabase
+  const { data: funds, error: fundsError } = await adminClient
     .from("mpf_funds")
     .select("*")
     .eq("is_active", true)
@@ -25,7 +23,7 @@ async function getOverviewData() {
   if (fundsError) console.error("[mpf-care] funds query failed:", fundsError.code, fundsError.message);
 
   // Get ALL prices for backtest calculations
-  const { data: allPrices, error: pricesError } = await supabase
+  const { data: allPrices, error: pricesError } = await adminClient
     .from("mpf_prices")
     .select("fund_id, nav, daily_change_pct, date")
     .order("date", { ascending: false });
@@ -111,7 +109,7 @@ async function getOverviewData() {
   const refUpdatedAt = refPortfolio?.[0]?.updated_at || now.toISOString();
 
   // Get latest news (5 items)
-  const { data: news, error: newsErr } = await supabase
+  const { data: news, error: newsErr } = await adminClient
     .from("mpf_news")
     .select("*")
     .order("published_at", { ascending: false })
@@ -119,7 +117,7 @@ async function getOverviewData() {
   if (newsErr) console.error("[mpf-care] news query failed:", newsErr.code, newsErr.message);
 
   // Get latest completed insight
-  const { data: latestInsight, error: insightErr } = await supabase
+  const { data: latestInsight, error: insightErr } = await adminClient
     .from("mpf_insights")
     .select("*")
     .eq("status", "completed")
@@ -129,7 +127,7 @@ async function getOverviewData() {
   if (insightErr && insightErr.code !== "PGRST116") console.error("[mpf-care] insight query failed:", insightErr.code, insightErr.message);
 
   // Get latest debate log
-  const { data: latestDebate, error: debateErr } = await supabase
+  const { data: latestDebate, error: debateErr } = await adminClient
     .from("mpf_insights")
     .select("content_en, content_zh, created_at")
     .eq("type", "rebalance_debate")
@@ -159,7 +157,7 @@ async function getOverviewData() {
   }
 
   // Last scraper run
-  const { data: lastRun, error: lastRunErr } = await supabase
+  const { data: lastRun, error: lastRunErr } = await adminClient
     .from("scraper_runs")
     .select("run_at, status, scraper_name")
     .eq("status", "success")

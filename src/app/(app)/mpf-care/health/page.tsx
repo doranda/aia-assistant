@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getPipelineStatus,
   getDataFreshness,
@@ -14,7 +14,7 @@ import { NewsPipeline } from "./components/news-pipeline";
 import { Activity } from "lucide-react";
 
 export default async function HealthDashboardPage() {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const [pipeline, freshness, coverage, outliers, news] = await Promise.all([
     getPipelineStatus(supabase),

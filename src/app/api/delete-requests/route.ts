@@ -69,8 +69,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await request.json();
-  const { id, action } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { id, action } = body as { id: string; action: string };
 
   if (!id || !["approve", "reject"].includes(action)) {
     return NextResponse.json(

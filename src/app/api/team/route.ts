@@ -33,8 +33,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await request.json();
-  const { email, full_name, role: newRole } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { email, full_name, role: newRole } = body as { email: string; full_name: string; role: UserRole };
 
   if (!email || !full_name || !newRole) {
     return NextResponse.json(
@@ -87,8 +92,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { id, role: newRole, is_active } = body;
+  let patchBody: Record<string, unknown>;
+  try {
+    patchBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { id, role: newRole, is_active } = patchBody as { id: string; role: string; is_active: boolean };
 
   if (!id) {
     return NextResponse.json({ error: "Member ID required" }, { status: 400 });
@@ -143,7 +153,13 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { id } = await request.json();
+  let deleteBody: Record<string, unknown>;
+  try {
+    deleteBody = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { id } = deleteBody as { id: string };
 
   if (!id) {
     return NextResponse.json({ error: "Member ID required" }, { status: 400 });

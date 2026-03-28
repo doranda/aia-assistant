@@ -21,7 +21,13 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { question, answer, sources } = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { question, answer, sources } = body as { question: string; answer: string; sources: unknown };
 
   if (!question?.trim() || !answer?.trim()) {
     return NextResponse.json({ error: "Question and answer are required" }, { status: 400 });

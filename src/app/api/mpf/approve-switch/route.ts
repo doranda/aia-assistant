@@ -21,8 +21,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
-  const body = await req.json();
-  const { switch_id, token } = body;
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+  const { switch_id, token } = body as { switch_id: string; token: string };
 
   if (!switch_id || !token) {
     return NextResponse.json(
