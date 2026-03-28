@@ -45,6 +45,10 @@
       "schedule": "30 12 * * 1-5"
     },
     {
+      "path": "/api/ilas/cron/weekly",
+      "schedule": "0 14 * * 0"
+    },
+    {
       "path": "/api/cron/ai-costs",
       "schedule": "0 9 * * 1"
     },
