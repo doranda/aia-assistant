@@ -252,6 +252,46 @@ export const ILAS_INSIGHT_DISCLAIMER = {
   zh: '此為AIA團隊內部討論參考資料，並非投資建議。由AIA投連險追蹤系統生成。',
 };
 
+// ===== Rebalancer: Defensive Funds =====
+// Funds with risk_rating = 'Low' OR category containing 'Fixed Income' / 'Liquidity'
+// Split by portfolio type (accumulation vs distribution)
+
+export const ILAS_DEFENSIVE_FUNDS: Record<string, string[]> = {
+  accumulation: [
+    'A05', 'A32', 'B01', 'C03', 'C09', 'CG9', 'E05', 'F14', 'F16',
+    'G16', 'I17', 'I27', 'I28', 'J07', 'L51', 'M10', 'M11', 'M13',
+    'N01', 'N08', 'NB1', 'P05', 'P08', 'PC4', 'Q02', 'R03', 'R52',
+    'W04', 'W06', 'X15', 'Y02', 'Y22',
+  ],
+  distribution: [
+    'Z03', 'Z05', 'Z06', 'Z08', 'Z11', 'Z12', 'Z13', 'Z15', 'Z16',
+    'Z17', 'Z25', 'Z26', 'Z29', 'Z32', 'Z33', 'Z36', 'Z39', 'Z52',
+    'Z66', 'Z69', 'ZL1', 'ZP4',
+  ],
+};
+
+// ===== Rebalancer: Investment Profile =====
+
+export const ILAS_INVESTMENT_PROFILE = {
+  label: 'Balanced Growth (ILAS)',
+  description: 'Long-term wealth accumulation via insurance-linked funds',
+};
+
+// ===== Rebalancer: Config =====
+
+export const ILAS_REBALANCER_CONFIG = {
+  DAILY_CAP: 3,
+  WEEKLY_LIMIT_DAYS: 7,
+  PRICE_FRESHNESS_DAYS: 7,
+  METRICS_COVERAGE_PCT: 0.8,
+  DANGER_SORTINO_THRESHOLD: 0,
+  DANGER_DRAWDOWN_THRESHOLD: -20,
+  DANGER_MOMENTUM_THRESHOLD: -5,
+  EQUITY_CEILING_ON_DANGER: 40,
+  NUM_FUNDS_IN_PORTFOLIO: 3,
+  WEIGHT_INCREMENT: 10,
+};
+
 // ===== Fund Houses =====
 // All 29 fund houses across the 142 ILAS funds
 
