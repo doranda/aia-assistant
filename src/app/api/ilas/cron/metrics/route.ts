@@ -35,13 +35,21 @@ export async function GET(req: Request) {
   let skipped = 0;
   let errors = 0;
 
+  // TODO: Known N+1 query pattern — each fund triggers a separate prices query (~710 queries at full scale).
+  // Optimization: batch-fetch all prices in one query grouped by fund_id, then compute in-memory.
   for (const fund of funds) {
     // Get all prices for this fund
-    const { data: prices } = await supabase
+    const { data: prices, error: pricesErr } = await supabase
       .from("ilas_prices")
       .select("date, nav")
       .eq("fund_id", fund.id)
       .order("date", { ascending: true });
+
+    if (pricesErr) {
+      console.error(`[ilas-metrics] Failed to fetch prices for ${fund.fund_code}:`, pricesErr.message);
+      errors++;
+      continue;
+    }
 
     if (!prices || prices.length < 20) {
       skipped++;
@@ -82,12 +90,13 @@ export async function GET(req: Request) {
   }
 
   // Log scraper run
-  await supabase.from("scraper_runs").insert({
+  const { error: logErr } = await supabase.from("scraper_runs").insert({
     scraper_name: "ilas_metrics",
     status: errors === 0 ? "success" : "partial",
     records_processed: upserted,
     error_message: errors > 0 ? `${errors} upsert errors` : null,
   });
+  if (logErr) console.error("[ilas-metrics] Failed to log scraper run:", logErr.message);
 
   return NextResponse.json({
     ok: errors === 0,

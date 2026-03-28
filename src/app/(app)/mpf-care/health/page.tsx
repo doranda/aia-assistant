@@ -25,20 +25,26 @@ export default async function HealthDashboardPage() {
   ]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
+    <main className="space-y-6">
+      <header className="flex items-center gap-3">
         <Activity className="h-6 w-6 text-zinc-400" />
         <h1 className="text-2xl font-semibold tracking-tight">Pipeline Health</h1>
-      </div>
+      </header>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <section className="grid gap-6 md:grid-cols-2">
         <DataFreshness data={freshness} />
         <OutlierAlerts data={outliers} />
-      </div>
+      </section>
 
-      <PipelineStatus data={pipeline} />
-      <MissingData data={coverage} />
-      <NewsPipeline data={news} />
-    </div>
+      <section aria-label="Pipeline status">
+        <PipelineStatus data={pipeline} />
+      </section>
+      <section aria-label="Data coverage">
+        <MissingData data={coverage} />
+      </section>
+      <section aria-label="News pipeline">
+        <NewsPipeline data={news} />
+      </section>
+    </main>
   );
 }

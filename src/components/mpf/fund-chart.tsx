@@ -19,6 +19,10 @@ const PERIODS = [
 export function FundChart({ prices }: { prices: PricePoint[] }) {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["label"]>("1M");
 
+  if (prices.length === 0) {
+    return <p className="text-sm text-zinc-400">No price data available for chart.</p>;
+  }
+
   const days = PERIODS.find((p) => p.label === period)?.days || 30;
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
   const filtered = prices.filter((p) => p.date >= cutoff);

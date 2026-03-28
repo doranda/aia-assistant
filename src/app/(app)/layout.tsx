@@ -58,7 +58,7 @@ export default async function AppLayout({
         mpfAlertCount={mpfAlertCount || 0}
       />
       <div className="pt-12 pb-20 lg:pb-0 min-h-dvh">{children}</div>
-      <MobileNav pendingCount={pendingCount} />
+      <MobileNav />
     </>
   );
 }

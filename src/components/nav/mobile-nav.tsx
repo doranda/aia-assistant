@@ -12,7 +12,7 @@ const navItems = [
   { label: "Docs", href: "/documents", icon: FileText },
 ];
 
-export function MobileNav({ pendingCount = 0 }: { pendingCount?: number }) {
+export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -33,9 +33,6 @@ export function MobileNav({ pendingCount = 0 }: { pendingCount?: number }) {
             >
               <span className="relative">
                 <Icon className="w-5 h-5" />
-                {item.label === "Team" && pendingCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />
-                )}
               </span>
               <span className="text-[10px] font-semibold">{item.label}</span>
             </button>

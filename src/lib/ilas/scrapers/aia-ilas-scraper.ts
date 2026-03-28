@@ -121,9 +121,10 @@ export async function upsertIlasPrices(
   let inserted = 0;
   let errCount = 0;
 
-  const { data: funds } = await supabase
+  const { data: funds, error: fundsErr } = await supabase
     .from("ilas_funds")
     .select("id, fund_code");
+  if (fundsErr) console.error("[ilas-scraper] Failed to fetch funds:", fundsErr.message);
   const fundMap = new Map((funds || []).map((f) => [f.fund_code, f.id]));
 
   // Group by date
@@ -136,12 +137,13 @@ export async function upsertIlasPrices(
 
   for (const [date, group] of dateGroups) {
     // Previous day's prices for daily change
-    const { data: prevPrices } = await supabase
+    const { data: prevPrices, error: prevErr } = await supabase
       .from("ilas_prices")
       .select("fund_id, nav")
       .lt("date", date)
       .order("date", { ascending: false })
       .limit(200);
+    if (prevErr) console.error("[ilas-scraper] Failed to fetch previous prices:", prevErr.message);
 
     const prevMap = new Map<string, number>();
     for (const pp of prevPrices || []) {
@@ -220,12 +222,13 @@ export async function runILASPriceScrape(): Promise<{
 
   // Log scraper run
   const supabase = createAdminClient();
-  await supabase.from("scraper_runs").insert({
+  const { error: logErr } = await supabase.from("scraper_runs").insert({
     scraper_name: "ilas_prices",
     status: errors.length === 0 ? "success" : "partial",
     records_processed: inserted,
     error_message: errors.length > 0 ? errors.join("; ") : null,
   });
+  if (logErr) console.error("[ilas-scraper] Failed to log scraper run:", logErr.message);
 
   return { scraped: prices.length, inserted, errors };
 }

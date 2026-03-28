@@ -10,6 +10,10 @@ import type { FundCategory } from "@/lib/mpf/types";
 export function FundHeatmap({ funds }: { funds: FundWithLatestPrice[] }) {
   const router = useRouter();
 
+  if (funds.length === 0) {
+    return <p className="text-sm text-zinc-400">No fund data available.</p>;
+  }
+
   // Group by category
   const grouped = funds.reduce(
     (acc, fund) => {

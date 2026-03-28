@@ -111,23 +111,25 @@ async function getOverviewData() {
   const refUpdatedAt = refPortfolio?.[0]?.updated_at || now.toISOString();
 
   // Get latest news (5 items)
-  const { data: news } = await supabase
+  const { data: news, error: newsErr } = await supabase
     .from("mpf_news")
     .select("*")
     .order("published_at", { ascending: false })
     .limit(5);
+  if (newsErr) console.error("[mpf-care] news query failed:", newsErr.code, newsErr.message);
 
   // Get latest completed insight
-  const { data: latestInsight } = await supabase
+  const { data: latestInsight, error: insightErr } = await supabase
     .from("mpf_insights")
     .select("*")
     .eq("status", "completed")
     .order("created_at", { ascending: false })
     .limit(1)
     .single();
+  if (insightErr && insightErr.code !== "PGRST116") console.error("[mpf-care] insight query failed:", insightErr.code, insightErr.message);
 
   // Get latest debate log
-  const { data: latestDebate } = await supabase
+  const { data: latestDebate, error: debateErr } = await supabase
     .from("mpf_insights")
     .select("content_en, content_zh, created_at")
     .eq("type", "rebalance_debate")
@@ -135,14 +137,16 @@ async function getOverviewData() {
     .order("created_at", { ascending: false })
     .limit(1)
     .single();
+  if (debateErr && debateErr.code !== "PGRST116") console.error("[mpf-care] debate query failed:", debateErr.code, debateErr.message);
 
   // Recent rebalance scores (admin client bypasses RLS)
-  const { data: recentScores } = await adminClient
+  const { data: recentScores, error: scoresErr } = await adminClient
     .from("mpf_rebalance_scores")
     .select("*")
     .not("insight_id", "is", null)
     .order("scored_at", { ascending: false })
     .limit(20);
+  if (scoresErr) console.error("[mpf-care] rebalance scores query failed:", scoresErr.code, scoresErr.message);
 
   // Portfolio NAV history (tracked performance) — use admin client to bypass RLS
   const { data: portfolioNav, error: navError } = await adminClient
@@ -155,13 +159,14 @@ async function getOverviewData() {
   }
 
   // Last scraper run
-  const { data: lastRun } = await supabase
+  const { data: lastRun, error: lastRunErr } = await supabase
     .from("scraper_runs")
     .select("run_at, status, scraper_name")
     .eq("status", "success")
     .order("run_at", { ascending: false })
     .limit(1)
     .single();
+  if (lastRunErr && lastRunErr.code !== "PGRST116") console.error("[mpf-care] lastRun query failed:", lastRunErr.code, lastRunErr.message);
 
   return {
     fundsWithPrices,
