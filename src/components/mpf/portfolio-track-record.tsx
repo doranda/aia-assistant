@@ -77,7 +77,7 @@ export function PortfolioTrackRecord({ navHistory, inceptionDate }: PortfolioTra
 
   return (
     <section aria-labelledby="track-record-heading" className="mb-8">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
         <h2
           id="track-record-heading"
           className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300"
@@ -95,10 +95,10 @@ export function PortfolioTrackRecord({ navHistory, inceptionDate }: PortfolioTra
       </p>
 
       {/* NAV + performance tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">NAV</div>
-          <div className="text-xl font-mono font-semibold tabular-nums text-zinc-100">
+          <div className="text-lg sm:text-xl font-mono font-semibold tabular-nums text-zinc-100">
             {latest.nav.toFixed(4)}
           </div>
           <div className="text-[10px] font-mono text-zinc-400 mt-1">{latest.date}</div>
@@ -106,7 +106,7 @@ export function PortfolioTrackRecord({ navHistory, inceptionDate }: PortfolioTra
 
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">Daily</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(dailyReturn))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(dailyReturn))}>
             {formatReturn(dailyReturn)}
           </div>
           {latest.is_cash && (
@@ -116,21 +116,21 @@ export function PortfolioTrackRecord({ navHistory, inceptionDate }: PortfolioTra
 
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">MTD</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(mtdReturn))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(mtdReturn))}>
             {formatReturn(mtdReturn)}
           </div>
         </div>
 
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">YTD</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(ytdReturn))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(ytdReturn))}>
             {formatReturn(ytdReturn)}
           </div>
         </div>
 
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">Since Inception</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(sinceInception))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(sinceInception))}>
             {formatReturn(sinceInception)}
           </div>
           <div className="text-[10px] font-mono text-zinc-400 mt-1">

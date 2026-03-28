@@ -80,7 +80,7 @@ export function ModelPerformance({ scores }: { scores: RebalanceScore[] }) {
   return (
     <section
       aria-labelledby="model-perf-heading"
-      className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-6"
+      className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4 sm:p-6"
     >
       <h2
         id="model-perf-heading"
@@ -90,12 +90,12 @@ export function ModelPerformance({ scores }: { scores: RebalanceScore[] }) {
       </h2>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
         {/* Win Rate */}
         <div>
           <p className="text-[10px] font-mono text-zinc-400 mb-1">Win Rate</p>
           <p
-            className={`text-2xl font-mono tabular-nums font-semibold ${
+            className={`text-xl sm:text-2xl font-mono tabular-nums font-semibold ${
               winRate !== null ? winRateColor(winRate) : "text-zinc-500"
             }`}
           >
@@ -124,7 +124,7 @@ export function ModelPerformance({ scores }: { scores: RebalanceScore[] }) {
           <p className="text-[10px] font-mono text-zinc-400 mb-1">
             Decisions Scored
           </p>
-          <p className="text-2xl font-mono tabular-nums text-zinc-200">
+          <p className="text-xl sm:text-2xl font-mono tabular-nums text-zinc-200">
             {totalCount}
           </p>
         </div>
@@ -133,7 +133,7 @@ export function ModelPerformance({ scores }: { scores: RebalanceScore[] }) {
         <div>
           <p className="text-[10px] font-mono text-zinc-400 mb-1">Streak</p>
           <p
-            className={`text-2xl font-mono tabular-nums font-semibold ${
+            className={`text-xl sm:text-2xl font-mono tabular-nums font-semibold ${
               streak?.type === "correct"
                 ? "text-emerald-400"
                 : "text-red-400"

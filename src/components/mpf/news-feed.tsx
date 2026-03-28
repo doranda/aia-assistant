@@ -46,7 +46,7 @@ export function NewsFeed({ news }: { news: MpfNews[] }) {
           {filtered.map((n) => (
             <li key={n.id} className="py-4 first:pt-0">
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                   <a
                     href={n.url || "#"}
                     target="_blank"
@@ -113,7 +113,7 @@ function FilterGroup<T extends string>({
             aria-selected={value === item.value}
             onClick={() => onChange(item.value)}
             className={cn(
-              "text-[11px] font-mono px-2.5 py-1 rounded-md transition-colors cursor-pointer",
+              "text-[11px] font-mono px-2.5 py-2 rounded-md transition-colors cursor-pointer",
               value === item.value
                 ? "bg-zinc-800 text-zinc-200"
                 : "text-zinc-400 hover:text-zinc-200"

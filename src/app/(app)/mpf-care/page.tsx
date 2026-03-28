@@ -181,8 +181,8 @@ export default async function MpfCarePage() {
   const { fundsWithPrices, portfolioFunds, refUpdatedAt, news, latestInsight, latestDebate, recentScores, lastRun, priceDate, portfolioNav } = await getOverviewData();
 
   return (
-    <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
-      <header className="mb-16">
+    <main className="max-w-[980px] mx-auto px-6 py-8 lg:py-16 xl:py-24">
+      <header className="mb-8 lg:mb-16">
         <h1 className="text-[clamp(2rem,4vw,3rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.1]">
           MPF Care
         </h1>
@@ -199,31 +199,31 @@ export default async function MpfCarePage() {
       <DisclaimerBanner />
 
       {/* Sub-navigation */}
-      <nav aria-label="MPF Care sections" className="mt-8 flex items-center gap-4">
+      <nav aria-label="MPF Care sections" className="mt-8 flex items-center gap-2 sm:gap-4 flex-wrap">
         <a
           href="/mpf-care/news"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-2.5 rounded-md transition-colors"
         >
           <Newspaper className="w-3.5 h-3.5" />
           News
         </a>
         <a
           href="/mpf-care/insights"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-2.5 rounded-md transition-colors"
         >
           <Brain className="w-3.5 h-3.5" />
           Insights
         </a>
         <a
           href="/mpf-care/health"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-2.5 rounded-md transition-colors"
         >
           <Activity className="w-3.5 h-3.5" />
           Health
         </a>
         <a
           href="/mpf-care/screener"
-          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-1.5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-300 hover:text-zinc-100 px-3 py-2.5 rounded-md transition-colors"
         >
           <BarChart3 className="w-3.5 h-3.5" />
           Screener
@@ -278,7 +278,7 @@ export default async function MpfCarePage() {
       </section>
 
       {/* Two columns: News + Latest Insight */}
-      <div className="grid lg:grid-cols-2 gap-16">
+      <div className="grid lg:grid-cols-2 gap-8 lg:gap-16">
         {/* Latest News */}
         <section aria-labelledby="news-heading">
           <div className="flex items-center justify-between mb-6">

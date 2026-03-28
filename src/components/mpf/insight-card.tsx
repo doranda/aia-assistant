@@ -12,8 +12,8 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
                     insight.type === "alert" ? "Alert" : "On-Demand";
 
   return (
-    <article className="border border-zinc-800/40 rounded-lg p-6">
-      <div className="flex items-center justify-between mb-4">
+    <article className="border border-zinc-800/40 rounded-lg p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className={cn(
             "text-[10px] font-mono px-2 py-0.5 rounded",
@@ -37,7 +37,7 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
             aria-selected={lang === "en"}
             onClick={() => setLang("en")}
             className={cn(
-              "text-[11px] font-mono px-2 py-0.5 rounded transition-colors cursor-pointer",
+              "text-[11px] font-mono px-3 py-2 rounded transition-colors cursor-pointer",
               lang === "en" ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200"
             )}
           >
@@ -48,7 +48,7 @@ export function InsightCard({ insight }: { insight: MpfInsight }) {
             aria-selected={lang === "zh"}
             onClick={() => setLang("zh")}
             className={cn(
-              "text-[11px] font-mono px-2 py-0.5 rounded transition-colors cursor-pointer",
+              "text-[11px] font-mono px-3 py-2 rounded transition-colors cursor-pointer",
               lang === "zh" ? "bg-zinc-800 text-zinc-200" : "text-zinc-400 hover:text-zinc-200"
             )}
           >

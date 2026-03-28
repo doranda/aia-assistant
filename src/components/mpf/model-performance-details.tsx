@@ -28,7 +28,7 @@ export function ModelPerformanceDetails({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+        className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 transition-colors py-2"
       >
         <ChevronDown
           className={`w-3.5 h-3.5 transition-transform ${
@@ -54,7 +54,7 @@ export function ModelPerformanceDetails({
                     : null;
 
                 return (
-                  <li key={s.id} className="flex items-center justify-between py-2.5 first:pt-0">
+                  <li key={s.id} className="flex items-center justify-between py-2.5 first:pt-0 min-w-0">
                     <div className="flex items-center gap-3">
                       <time className="text-[10px] font-mono tabular-nums text-zinc-500 w-16 shrink-0">
                         {new Date(s.scored_at).toLocaleDateString("en-HK", {

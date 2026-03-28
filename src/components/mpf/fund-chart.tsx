@@ -33,7 +33,7 @@ export function FundChart({ prices }: { prices: PricePoint[] }) {
             aria-selected={period === p.label}
             onClick={() => setPeriod(p.label)}
             className={cn(
-              "text-[11px] font-mono px-3 py-1 rounded-md transition-colors cursor-pointer",
+              "text-[11px] font-mono px-3 py-2 rounded-md transition-colors cursor-pointer",
               period === p.label
                 ? "bg-zinc-800 text-zinc-200"
                 : "text-zinc-400 hover:text-zinc-200"

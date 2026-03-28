@@ -59,7 +59,7 @@ export function RiskMetrics({ metrics }: RiskMetricsProps) {
               key={p.key}
               onClick={() => setPeriod(p.key)}
               className={cn(
-                "text-[10px] font-mono px-2 py-0.5 rounded transition-colors",
+                "text-[10px] font-mono px-3 py-2 rounded transition-colors",
                 p.key === period ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
               )}
             >
@@ -72,7 +72,7 @@ export function RiskMetrics({ metrics }: RiskMetricsProps) {
       {!m ? (
         <p className="text-sm text-zinc-400">Insufficient data for this period.</p>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {cards.map((card) => (
             <div key={card.label} className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-3" title={card.tooltip}>
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">{card.label}</div>

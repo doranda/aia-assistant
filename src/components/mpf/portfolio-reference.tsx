@@ -65,32 +65,33 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">Latest</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedDaily))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(weightedDaily))}>
             {formatReturn(weightedDaily)}
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">MTD</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedMtd))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(weightedMtd))}>
             {formatReturn(weightedMtd)}
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">YTD</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedYtd))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(weightedYtd))}>
             {formatReturn(weightedYtd)}
           </div>
         </div>
         <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-lg p-4">
           <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1">1Y</div>
-          <div className={cn("text-xl font-mono font-semibold tabular-nums", returnColor(weightedY1))}>
+          <div className={cn("text-lg sm:text-xl font-mono font-semibold tabular-nums", returnColor(weightedY1))}>
             {formatReturn(weightedY1)}
           </div>
         </div>
       </div>
 
       {/* Fund allocation table */}
-      <div className="border border-zinc-800/60 rounded-lg overflow-hidden">
+      <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+      <div className="border border-zinc-800/60 rounded-lg overflow-hidden min-w-[520px]">
         {/* Header */}
         <div className="grid grid-cols-[1fr_60px_70px_70px_70px_70px] bg-zinc-900/80 px-4 py-2 border-b border-zinc-800/60">
           <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400">Fund</span>
@@ -146,6 +147,7 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
             {formatReturn(weightedY1)}
           </span>
         </div>
+      </div>
       </div>
 
       {/* Rationale notes */}

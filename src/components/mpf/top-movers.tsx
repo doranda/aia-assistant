@@ -20,7 +20,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
   }
 
   return (
-    <div className="grid lg:grid-cols-2 gap-8">
+    <div className="grid lg:grid-cols-2 gap-12 lg:gap-8">
       {/* Gainers */}
       <div>
         <h3 className="text-[10px] font-mono uppercase tracking-wider text-emerald-500/70 mb-4">
@@ -29,11 +29,11 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
         <ol className="space-y-0 divide-y divide-zinc-800/60">
           {gainers.map((fund) => (
             <li key={fund.id} className="flex items-center justify-between py-3 first:pt-0">
-              <div>
-                <span className="text-[13px] text-zinc-300">{fund.name_en}</span>
+              <div className="min-w-0">
+                <span className="text-[13px] text-zinc-300 truncate">{fund.name_en}</span>
                 <span className="text-[11px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
               </div>
-              <span className="text-[13px] font-mono font-semibold tabular-nums text-emerald-400">
+              <span className="text-[13px] font-mono font-semibold tabular-nums text-emerald-400 shrink-0">
                 +{fund.daily_change_pct?.toFixed(2)}%
               </span>
             </li>
@@ -52,11 +52,11 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
         <ol className="space-y-0 divide-y divide-zinc-800/60">
           {losers.map((fund) => (
             <li key={fund.id} className="flex items-center justify-between py-3 first:pt-0">
-              <div>
-                <span className="text-[13px] text-zinc-300">{fund.name_en}</span>
+              <div className="min-w-0">
+                <span className="text-[13px] text-zinc-300 truncate">{fund.name_en}</span>
                 <span className="text-[11px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
               </div>
-              <span className="text-[13px] font-mono font-semibold tabular-nums text-red-400">
+              <span className="text-[13px] font-mono font-semibold tabular-nums text-red-400 shrink-0">
                 {fund.daily_change_pct?.toFixed(2)}%
               </span>
             </li>
