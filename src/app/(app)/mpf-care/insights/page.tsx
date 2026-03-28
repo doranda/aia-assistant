@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canGenerateInsight } from "@/lib/permissions";
 import { InsightCard } from "@/components/mpf/insight-card";
@@ -10,21 +11,27 @@ export default async function MpfInsightsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
+  if (!user) redirect("/login");
+
+  const { data: profile, error: profileErr } = await supabase
     .from("profiles")
     .select("role")
-    .eq("id", user!.id)
+    .eq("id", user.id)
     .single();
+
+  if (profileErr) console.error("[insights] profile query error:", profileErr);
 
   const role = (profile?.role || "agent") as UserRole;
   const canGenerate = canGenerateInsight(role);
 
-  const { data: insights } = await supabase
+  const { data: insights, error: insightsErr } = await supabase
     .from("mpf_insights")
     .select("*")
     .eq("status", "completed")
     .order("created_at", { ascending: false })
     .limit(20);
+
+  if (insightsErr) console.error("[insights] insights query error:", insightsErr);
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">

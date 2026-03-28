@@ -1,15 +1,17 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { NewsFeed } from "@/components/mpf/news-feed";
 import type { MpfNews } from "@/lib/mpf/types";
 
 export default async function MpfNewsPage() {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
-  const { data: news } = await supabase
+  const { data: news, error: newsErr } = await supabase
     .from("mpf_news")
     .select("*")
     .order("published_at", { ascending: false })
     .limit(100);
+
+  if (newsErr) console.error("[news] news query error:", newsErr);
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">

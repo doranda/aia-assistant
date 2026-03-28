@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { FundChart } from "@/components/mpf/fund-chart";
 import { RiskMetrics } from "@/components/mpf/risk-metrics";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
@@ -13,37 +13,44 @@ export default async function FundExplorerPage({
   params: Promise<{ fund_code: string }>;
 }) {
   const { fund_code } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Get fund
-  const { data: fund } = await supabase
+  const { data: fund, error: fundError } = await supabase
     .from("mpf_funds")
     .select("*")
     .eq("fund_code", fund_code)
     .single();
 
+  if (fundError) console.error("[fund-detail] fund query error:", fundError);
   if (!fund) notFound();
 
   // Get all prices for chart
-  const { data: prices } = await supabase
+  const { data: prices, error: pricesError } = await supabase
     .from("mpf_prices")
     .select("date, nav, daily_change_pct, source")
     .eq("fund_id", fund.id)
     .order("date", { ascending: true });
 
+  if (pricesError) console.error("[fund-detail] prices query error:", pricesError);
+
   // Get correlated news
-  const { data: correlatedNews } = await supabase
+  const { data: correlatedNews, error: newsError } = await supabase
     .from("mpf_fund_news")
     .select("impact_note, mpf_news(headline, summary, source, published_at, sentiment, url)")
     .eq("fund_id", fund.id)
     .order("created_at", { ascending: false })
     .limit(10);
 
+  if (newsError) console.error("[fund-detail] correlated news query error:", newsError);
+
   // Get risk metrics for all periods
-  const { data: allMetrics } = await supabase
+  const { data: allMetrics, error: metricsError } = await supabase
     .from("mpf_fund_metrics")
     .select("*")
     .eq("fund_id", fund.id);
+
+  if (metricsError) console.error("[fund-detail] metrics query error:", metricsError);
 
   const metricsMap: Record<MetricPeriod, FundMetrics | null> = {
     "1y": null, "3y": null, "5y": null, "since_launch": null,
@@ -58,7 +65,7 @@ export default async function FundExplorerPage({
   const calcReturn = (daysAgo: number) => {
     if (!latest) return null;
     const targetDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const past = priceList.find((p) => p.date <= targetDate);
+    const past = priceList.findLast((p) => p.date <= targetDate);
     if (!past) return null;
     return ((latest.nav - past.nav) / past.nav * 100);
   };

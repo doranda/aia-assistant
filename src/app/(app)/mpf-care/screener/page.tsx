@@ -1,5 +1,5 @@
 // src/app/(app)/mpf-care/screener/page.tsx
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import {
   SCREENER_CATEGORIES,
@@ -90,19 +90,23 @@ async function getScreenerData(
   period: MetricPeriod,
   categoryFilter: keyof typeof SCREENER_CATEGORIES
 ): Promise<ScreenerRow[]> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
-  const { data: metrics } = await supabase
+  const { data: metrics, error: metricsErr } = await supabase
     .from("mpf_fund_metrics")
     .select(
       "fund_id, period, sortino_ratio, max_drawdown_pct, annualized_return_pct, momentum_score, expense_ratio_pct"
     )
     .eq("period", period);
 
-  const { data: funds } = await supabase
+  if (metricsErr) console.error("[screener] metrics query error:", metricsErr);
+
+  const { data: funds, error: fundsErr } = await supabase
     .from("mpf_funds")
     .select("id, fund_code, name_en, category, risk_rating")
     .eq("is_active", true);
+
+  if (fundsErr) console.error("[screener] funds query error:", fundsErr);
 
   if (!metrics || !funds) return [];
 

@@ -37,6 +37,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: true, reason: "Holiday" });
   }
 
+  try {
   const supabase = createAdminClient();
 
   // ===== Date ranges =====
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
 
   // ===== Fetch portfolio NAV data =====
   // YTD start NAV
-  const { data: ytdStartNav } = await supabase
+  const { data: ytdStartNav, error: ytdErr } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, date")
     .gte("date", ytdStart)
@@ -57,8 +58,10 @@ export async function GET(req: Request) {
     .limit(1)
     .single();
 
+  if (ytdErr && ytdErr.code !== "PGRST116") console.error("[monthly-report] ytdStartNav error:", ytdErr);
+
   // Last month start NAV
-  const { data: lastMonthStartNav } = await supabase
+  const { data: lastMonthStartNav, error: lmsErr } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, date")
     .gte("date", lastMonthStart)
@@ -67,8 +70,10 @@ export async function GET(req: Request) {
     .limit(1)
     .single();
 
+  if (lmsErr && lmsErr.code !== "PGRST116") console.error("[monthly-report] lastMonthStartNav error:", lmsErr);
+
   // Last month end NAV
-  const { data: lastMonthEndNav } = await supabase
+  const { data: lastMonthEndNav, error: lmeErr } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, date")
     .lte("date", lastMonthEnd)
@@ -76,22 +81,28 @@ export async function GET(req: Request) {
     .limit(1)
     .single();
 
+  if (lmeErr && lmeErr.code !== "PGRST116") console.error("[monthly-report] lastMonthEndNav error:", lmeErr);
+
   // Latest NAV (for MTD)
-  const { data: latestNav } = await supabase
+  const { data: latestNav, error: latestErr } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, date, holdings")
     .order("date", { ascending: false })
     .limit(1)
     .single();
 
+  if (latestErr && latestErr.code !== "PGRST116") console.error("[monthly-report] latestNav error:", latestErr);
+
   // MTD start NAV (first nav of current month, if exists)
-  const { data: mtdStartNav } = await supabase
+  const { data: mtdStartNav, error: mtdErr } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, date")
     .gte("date", mtdStart)
     .order("date", { ascending: true })
     .limit(1)
     .single();
+
+  if (mtdErr && mtdErr.code !== "PGRST116") console.error("[monthly-report] mtdStartNav error:", mtdErr);
 
   if (!latestNav) {
     return NextResponse.json({ ok: false, error: "No portfolio NAV data" });
@@ -180,4 +191,8 @@ export async function GET(req: Request) {
       switches: switchCount,
     },
   });
+  } catch (err) {
+    console.error("[monthly-report] Unhandled error:", err);
+    return NextResponse.json({ ok: false, error: "Monthly report failed" }, { status: 500 });
+  }
 }

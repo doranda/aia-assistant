@@ -44,11 +44,13 @@ export async function getPipelineStatus(
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("scraper_runs")
     .select("scraper_name, run_at, status, error_message, records_processed, duration_ms")
     .gte("run_at", since.toISOString())
     .order("run_at", { ascending: false });
+
+  if (error) console.error("[health] getPipelineStatus error:", error);
 
   return (data || []).map((r) => ({
     ...r,
@@ -59,27 +61,33 @@ export async function getPipelineStatus(
 export async function getDataFreshness(supabase: SupabaseClient): Promise<FreshnessStatus[]> {
   const now = new Date();
 
-  const { data: latestPrice } = await supabase
+  const { data: latestPrice, error: priceErr } = await supabase
     .from("mpf_prices")
     .select("date")
     .order("date", { ascending: false })
     .limit(1)
     .single();
 
-  const { data: latestNews } = await supabase
+  if (priceErr && priceErr.code !== "PGRST116") console.error("[health] latestPrice error:", priceErr);
+
+  const { data: latestNews, error: newsErr } = await supabase
     .from("mpf_news")
     .select("published_at")
     .order("published_at", { ascending: false })
     .limit(1)
     .single();
 
-  const { data: latestInsight } = await supabase
+  if (newsErr && newsErr.code !== "PGRST116") console.error("[health] latestNews error:", newsErr);
+
+  const { data: latestInsight, error: insightErr } = await supabase
     .from("mpf_insights")
     .select("created_at")
     .eq("status", "completed")
     .order("created_at", { ascending: false })
     .limit(1)
     .single();
+
+  if (insightErr && insightErr.code !== "PGRST116") console.error("[health] latestInsight error:", insightErr);
 
   function calcFreshness(
     label: string,
@@ -105,20 +113,24 @@ export async function getMissingData(
   supabase: SupabaseClient,
   days: number = 30
 ): Promise<DayCoverage[]> {
-  const { count: expectedCount } = await supabase
+  const { count: expectedCount, error: countErr } = await supabase
     .from("mpf_funds")
     .select("*", { count: "exact", head: true })
     .eq("is_active", true);
+
+  if (countErr) console.error("[health] getMissingData fund count error:", countErr);
 
   const expected = expectedCount || 25;
 
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  const { data } = await supabase
+  const { data, error: pricesErr } = await supabase
     .from("mpf_prices")
     .select("date, fund_id")
     .gte("date", since.toISOString().split("T")[0]);
+
+  if (pricesErr) console.error("[health] getMissingData prices error:", pricesErr);
 
   const dateCounts = new Map<string, Set<string>>();
   for (const row of data || []) {
@@ -148,17 +160,19 @@ export async function getMissingData(
 export async function getOutliers(supabase: SupabaseClient): Promise<OutlierFund[]> {
   const today = new Date().toISOString().split("T")[0];
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("mpf_prices")
     .select("fund_id, daily_change_pct, date, mpf_funds!inner(fund_code, name_en)")
     .eq("date", today)
     .not("daily_change_pct", "is", null);
 
+  if (error) console.error("[health] getOutliers error:", error);
+
   return (data || [])
     .filter((p) => Math.abs(p.daily_change_pct || 0) > 3)
     .map((p) => ({
-      fund_code: (p as any).mpf_funds.fund_code,
-      name_en: (p as any).mpf_funds.name_en,
+      fund_code: (p.mpf_funds as unknown as { fund_code: string; name_en: string }).fund_code,
+      name_en: (p.mpf_funds as unknown as { fund_code: string; name_en: string }).name_en,
       daily_change_pct: p.daily_change_pct!,
       date: p.date,
     }))
@@ -172,10 +186,12 @@ export async function getNewsPipeline(
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("mpf_news")
     .select("published_at, sentiment, category")
     .gte("published_at", since.toISOString());
+
+  if (error) console.error("[health] getNewsPipeline error:", error);
 
   const dateStats = new Map<string, { total: number; classified: number }>();
   for (const row of data || []) {
@@ -195,12 +211,14 @@ export async function getConsecutiveFailures(
   supabase: SupabaseClient,
   scraperName: string
 ): Promise<number> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("scraper_runs")
     .select("status")
     .eq("scraper_name", scraperName)
     .order("run_at", { ascending: false })
     .limit(10);
+
+  if (error) console.error("[health] getConsecutiveFailures error:", error);
 
   let count = 0;
   for (const run of data || []) {
