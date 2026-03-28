@@ -13,18 +13,20 @@ export async function generateInsight(insightId: string): Promise<void> {
   const ollamaKey = process.env.OLLAMA_API_KEY;
 
   // Mark as generating
-  await supabase
+  const { error: genError } = await supabase
     .from("mpf_insights")
     .update({ status: "generating" })
     .eq("id", insightId);
+  if (genError) console.error("[insights] Failed to set status to generating:", genError);
 
   try {
     // Get the insight record
-    const { data: insight } = await supabase
+    const { data: insight, error: insightError } = await supabase
       .from("mpf_insights")
       .select("*")
       .eq("id", insightId)
       .single();
+    if (insightError && insightError.code !== "PGRST116") console.error("[insights] Failed to fetch insight:", insightError);
 
     if (!insight) throw new Error("Insight not found");
 
@@ -40,7 +42,7 @@ export async function generateInsight(insightId: string): Promise<void> {
     // Determine which fund categories are covered
     const fundCategories = determineFundCategories(context);
 
-    await supabase
+    const { error: completedError } = await supabase
       .from("mpf_insights")
       .update({
         status: "completed",
@@ -49,14 +51,16 @@ export async function generateInsight(insightId: string): Promise<void> {
         fund_categories: fundCategories,
       })
       .eq("id", insightId);
+    if (completedError) console.error("[insights] Failed to set status to completed:", completedError);
   } catch (error) {
-    await supabase
+    const { error: failedError } = await supabase
       .from("mpf_insights")
       .update({
         status: "failed",
         content_en: `Generation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       })
       .eq("id", insightId);
+    if (failedError) console.error("[insights] Failed to set status to failed:", failedError);
   }
 }
 
@@ -64,28 +68,31 @@ async function gatherInsightContext(insight: MpfInsight) {
   const supabase = createAdminClient();
 
   // Get recent prices (last 7 days)
-  const { data: recentPrices } = await supabase
+  const { data: recentPrices, error: pricesError } = await supabase
     .from("mpf_prices")
     .select("fund_id, date, nav, daily_change_pct, mpf_funds(fund_code, name_en, category)")
     .gte("date", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0])
     .order("date", { ascending: false });
+  if (pricesError) console.error("[insights] Failed to fetch recent prices:", pricesError);
 
   // Get recent high-impact news (last 7 days)
-  const { data: recentNews } = await supabase
+  const { data: recentNews, error: newsError } = await supabase
     .from("mpf_news")
     .select("headline, summary, region, category, sentiment, impact_tags, published_at")
     .gte("published_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     .order("published_at", { ascending: false })
     .limit(20);
+  if (newsError) console.error("[insights] Failed to fetch recent news:", newsError);
 
   // Get top movers
-  const { data: topMovers } = await supabase
+  const { data: topMovers, error: moversError } = await supabase
     .from("mpf_prices")
     .select("daily_change_pct, mpf_funds(fund_code, name_en)")
     .eq("date", new Date().toISOString().split("T")[0])
     .not("daily_change_pct", "is", null)
     .order("daily_change_pct", { ascending: false })
     .limit(5);
+  if (moversError) console.error("[insights] Failed to fetch top movers:", moversError);
 
   return {
     type: insight.type,

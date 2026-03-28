@@ -185,12 +185,13 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
   const todayISO = todayStart.toISOString();
-  const { data: todayRebalances } = await supabase
+  const { data: todayRebalances, error: todayError } = await supabase
     .from("mpf_insights")
     .select("id")
     .or("type.eq.alert,type.eq.rebalance_debate")
     .or("trigger.eq.portfolio_rebalance,trigger.eq.debate_rebalance")
     .gte("created_at", todayISO);
+  if (todayError) console.error("[debate-rebalancer] Failed to fetch today's rebalances:", todayError);
 
   const todayCount = todayRebalances?.length || 0;
   console.log(`[debate-rebalancer] Daily cap check: ${todayCount} rebalances today (since ${todayISO}), data: ${JSON.stringify(todayRebalances?.map(r => r.id).slice(0, 3))}`);
@@ -200,7 +201,7 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   // Weekly rate limit (skip if high-impact news)
   if (highImpactCount === 0) {
-    const { data: lastRebalance } = await supabase
+    const { data: lastRebalance, error: lastRebalanceError } = await supabase
       .from("mpf_insights")
       .select("created_at")
       .or("type.eq.alert,type.eq.rebalance_debate")
@@ -208,6 +209,7 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
+    if (lastRebalanceError && lastRebalanceError.code !== "PGRST116") console.error("[debate-rebalancer] Failed to fetch last rebalance:", lastRebalanceError);
 
     if (lastRebalance) {
       const daysSince = (Date.now() - new Date(lastRebalance.created_at).getTime()) / (1000 * 60 * 60 * 24);
@@ -218,10 +220,11 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   }
 
   // ===== DATA INTEGRITY GATE — refuse to rebalance with incomplete data =====
-  const { data: activeFunds } = await supabase
+  const { data: activeFunds, error: activeFundsError } = await supabase
     .from("mpf_funds")
     .select("id, fund_code")
     .eq("is_active", true);
+  if (activeFundsError) console.error("[debate-rebalancer] Failed to fetch active funds:", activeFundsError);
 
   const totalActive = activeFunds?.length || 0;
 
@@ -233,13 +236,14 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
     const staleFunds: string[] = [];
     for (const f of activeFunds || []) {
-      const { data: latestPrice } = await supabase
+      const { data: latestPrice, error: latestPriceError } = await supabase
         .from("mpf_prices")
         .select("date")
         .eq("fund_id", f.id)
         .order("date", { ascending: false })
         .limit(1)
         .single();
+      if (latestPriceError && latestPriceError.code !== "PGRST116") console.error("[debate-rebalancer] Failed to fetch latest price for fund:", f.fund_code, latestPriceError);
 
       if (!latestPrice || latestPrice.date < cutoff) {
         staleFunds.push(f.fund_code);
@@ -259,10 +263,11 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   }
 
   // Check 2: Metrics coverage — 80% of active funds must have 3Y metrics
-  const { data: metricsCount } = await supabase
+  const { data: metricsCount, error: metricsCountError } = await supabase
     .from("mpf_fund_metrics")
     .select("fund_code")
     .eq("period", "3y");
+  if (metricsCountError) console.error("[debate-rebalancer] Failed to fetch metrics count:", metricsCountError);
 
   const fundsWithMetrics = metricsCount?.length || 0;
   const coveragePct = totalActive > 0 ? (fundsWithMetrics / totalActive) * 100 : 0;
@@ -281,15 +286,17 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   console.log(`[debate-rebalancer] Data integrity OK: all prices fresh, metrics ${fundsWithMetrics}/${totalActive} (${coveragePct.toFixed(0)}%)`);
 
   // Gather data for agents
-  const { data: portfolio } = await supabase
+  const { data: portfolio, error: portfolioError } = await supabase
     .from("mpf_reference_portfolio")
     .select("fund_id, weight, note");
+  if (portfolioError) console.error("[debate-rebalancer] Failed to fetch reference portfolio:", portfolioError);
 
   if (!portfolio?.length) return { rebalanced: false, reason: "No reference portfolio set" };
 
-  const { data: funds } = await supabase
+  const { data: funds, error: fundsError } = await supabase
     .from("mpf_funds")
     .select("id, fund_code, name_en, category, risk_rating");
+  if (fundsError) console.error("[debate-rebalancer] Failed to fetch funds:", fundsError);
 
   const fundMap = new Map((funds || []).map(f => [f.id, f]));
   const fundCodeToId = new Map((funds || []).map(f => [f.fund_code, f.id]));
@@ -300,10 +307,11 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   });
 
   // Get fund metrics
-  const { data: metrics } = await supabase
+  const { data: metrics, error: metricsError } = await supabase
     .from("mpf_fund_metrics")
     .select("*")
     .eq("period", "3y");
+  if (metricsError) console.error("[debate-rebalancer] Failed to fetch fund metrics:", metricsError);
 
   const metricsText = (metrics || []).map(m =>
     `${m.fund_code}: Sortino=${m.sortino_ratio?.toFixed(2) ?? "N/A"}, Sharpe=${m.sharpe_ratio?.toFixed(2) ?? "N/A"}, MaxDD=${m.max_drawdown_pct !== null ? (m.max_drawdown_pct * 100).toFixed(1) + "%" : "N/A"}, CAGR=${m.annualized_return_pct !== null ? (m.annualized_return_pct * 100).toFixed(1) + "%" : "N/A"}, FER=${m.expense_ratio_pct?.toFixed(2) ?? "N/A"}%, Mom3M=${m.momentum_score !== null ? (m.momentum_score * 100).toFixed(1) + "%" : "N/A"}`
@@ -311,12 +319,13 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   // Get recent news
   const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-  const { data: recentNews } = await supabase
+  const { data: recentNews, error: recentNewsError } = await supabase
     .from("mpf_news")
     .select("headline, impact_tags, sentiment, region, is_high_impact")
     .gte("published_at", twoDaysAgo)
     .order("published_at", { ascending: false })
     .limit(20);
+  if (recentNewsError) console.error("[debate-rebalancer] Failed to fetch recent news:", recentNewsError);
 
   const newsText = (recentNews || []).map(n =>
     `[${n.sentiment}/${n.region}${n.is_high_impact ? "/HIGH-IMPACT" : ""}] ${n.headline} (tags: ${n.impact_tags?.join(", ") || "none"})`
@@ -348,12 +357,13 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   // ===== FEEDBACK INJECTION — last 5 scored decisions for Debate + Mediator =====
   let trackRecordBlock = "";
-  const { data: recentScores } = await supabase
+  const { data: recentScores, error: scoresError } = await supabase
     .from("mpf_rebalance_scores")
     .select("reasoning_quality, win_rate, lessons, actual_return_pct, baseline_return_pct, scored_at")
     .not("insight_id", "is", null)
     .order("scored_at", { ascending: false })
     .limit(5);
+  if (scoresError) console.error("[debate-rebalancer] Failed to fetch recent scores:", scoresError);
 
   if (recentScores && recentScores.length > 0) {
     const overallWinRate = recentScores.filter(s =>
@@ -537,7 +547,7 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
   ].join("\n");
 
   // Insert insight FIRST to get the ID for linking
-  const { data: insightRow } = await supabase.from("mpf_insights").insert({
+  const { data: insightRow, error: insightInsertError } = await supabase.from("mpf_insights").insert({
     type: "rebalance_debate",
     trigger: "debate_rebalance",
     content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
@@ -549,6 +559,7 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
     status: "completed",
     model: MODEL,
   }).select("id").single();
+  if (insightInsertError) console.error("[debate-rebalancer] Failed to insert insight row:", insightInsertError);
 
   const insightId = insightRow?.id || null;
 

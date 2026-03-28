@@ -500,17 +500,18 @@ export async function initBacktestRuns(
 ): Promise<void> {
   const supabase = createAdminClient();
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from("mpf_backtest_runs")
     .select("id, track")
     .in("status", ["in_progress", "paused"]);
+  if (existingError) console.error("[backtester] Failed to fetch existing runs:", existingError);
 
   const existingTracks = new Set((existing || []).map((r) => r.track));
 
   for (const track of ["quant_only", "quant_news"] as const) {
     if (existingTracks.has(track)) continue;
 
-    await supabase.from("mpf_backtest_runs").insert({
+    const { error: insertRunError } = await supabase.from("mpf_backtest_runs").insert({
       track,
       cursor_date: startDate,
       start_date: startDate,
@@ -521,6 +522,7 @@ export async function initBacktestRuns(
       budget_used_this_session: 0,
       cumulative_return_pct: 0,
     });
+    if (insertRunError) console.error("[backtester] Failed to insert backtest run:", track, insertRunError);
   }
 }
 
@@ -548,7 +550,8 @@ export async function runBacktestSession(
 
   if (!runs || runs.length === 0) {
     // Try without status filter to debug
-    const { data: allRuns } = await supabase.from("mpf_backtest_runs").select("id, track, status");
+    const { data: allRuns, error: allRunsError } = await supabase.from("mpf_backtest_runs").select("id, track, status");
+    if (allRunsError) console.error("[backtester] Failed to fetch all runs for debug:", allRunsError);
     console.log(`[backtester] All runs in table: ${JSON.stringify(allRuns)}`);
     throw new Error(`No active backtest runs found. Call initBacktestRuns first. (allRuns: ${allRuns?.length || 0})`);
   }
@@ -561,10 +564,11 @@ export async function runBacktestSession(
   }
 
   // 2. Reset session budgets
-  await supabase
+  const { error: resetBudgetError } = await supabase
     .from("mpf_backtest_runs")
     .update({ budget_used_this_session: 0, updated_at: new Date().toISOString() })
     .in("id", [track1Run.id, track2Run.id]);
+  if (resetBudgetError) console.error("[backtester] Failed to reset session budgets:", resetBudgetError);
 
   // 3. Pre-load ALL prices from Supabase
   // Supabase default max is 1000 rows. We use .limit() per page and paginate.
@@ -594,9 +598,10 @@ export async function runBacktestSession(
   }
 
   // 4. Build fund_id → fund_code lookup
-  const { data: fundsData } = await supabase
+  const { data: fundsData, error: fundsDataError } = await supabase
     .from("mpf_funds")
     .select("id, fund_code");
+  if (fundsDataError) console.error("[backtester] Failed to fetch funds data:", fundsDataError);
 
   const fundIdToCode = new Map(
     (fundsData || []).map((f) => [f.id, f.fund_code])
@@ -662,13 +667,14 @@ export async function runBacktestSession(
 
   // Load last allocation for each track (from most recent backtest result)
   for (const track of ["quant_only", "quant_news"] as const) {
-    const { data: lastResult } = await supabase
+    const { data: lastResult, error: lastResultError } = await supabase
       .from("mpf_backtest_results")
       .select("allocation, sim_date")
       .eq("run_id", state[track].run.id)
       .order("sim_date", { ascending: false })
       .limit(1)
       .single();
+    if (lastResultError && lastResultError.code !== "PGRST116") console.error("[backtester] Failed to fetch last result for track:", track, lastResultError);
 
     if (lastResult?.allocation) {
       state[track].allocation = lastResult.allocation as {
@@ -681,7 +687,7 @@ export async function runBacktestSession(
     }
 
     // Count weeks since last rebalance
-    const { data: lastRebalance } = await supabase
+    const { data: lastRebalance, error: lastRebalanceError } = await supabase
       .from("mpf_backtest_results")
       .select("sim_date")
       .eq("run_id", state[track].run.id)
@@ -689,6 +695,7 @@ export async function runBacktestSession(
       .order("sim_date", { ascending: false })
       .limit(1)
       .single();
+    if (lastRebalanceError && lastRebalanceError.code !== "PGRST116") console.error("[backtester] Failed to fetch last rebalance for track:", track, lastRebalanceError);
 
     if (lastRebalance) {
       const daysSince =
@@ -764,7 +771,7 @@ export async function runBacktestSession(
     s.cumReturn = (1 + s.cumReturn) * (1 + weeklyReturn) - 1;
 
     // Record result in DB
-    await supabase.from("mpf_backtest_results").insert({
+    const { error: insertResultError } = await supabase.from("mpf_backtest_results").insert({
       run_id: s.run.id,
       sim_date: simDate,
       allocation: result.allocation,
@@ -774,6 +781,7 @@ export async function runBacktestSession(
       cumulative_return_pct: s.cumReturn * 100,
       rebalance_triggered: result.rebalanced,
     });
+    if (insertResultError) console.error("[backtester] Failed to insert backtest result:", simDate, insertResultError);
 
     // Update tracking
     budgetUsed += result.budgetCost;
@@ -784,7 +792,7 @@ export async function runBacktestSession(
 
     // Advance cursor in DB
     const isCompleted = s.cursor > s.run.end_date;
-    await supabase
+    const { error: updateRunError } = await supabase
       .from("mpf_backtest_runs")
       .update({
         cursor_date: s.cursor,
@@ -795,6 +803,7 @@ export async function runBacktestSession(
         updated_at: new Date().toISOString(),
       })
       .eq("id", s.run.id);
+    if (updateRunError) console.error("[backtester] Failed to update run cursor:", s.run.id, updateRunError);
 
     // Update local run state
     s.run.total_weeks_processed++;

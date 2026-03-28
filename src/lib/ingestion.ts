@@ -90,10 +90,11 @@ export async function ingestDocument(
   }
 
   // 2. Update status to processing
-  await supabase
+  const { error: processingError } = await supabase
     .from("documents")
     .update({ status: "processing" })
     .eq("id", documentId);
+  if (processingError) console.error("[ingestion] Failed to set status to processing:", processingError);
 
   try {
     // 3. Download PDF from storage
@@ -135,7 +136,8 @@ export async function ingestDocument(
     }
 
     // 6. Delete old chunks (if re-ingesting)
-    await supabase.from("chunks").delete().eq("document_id", documentId);
+    const { error: deleteChunksError } = await supabase.from("chunks").delete().eq("document_id", documentId);
+    if (deleteChunksError) console.error("[ingestion] Failed to delete old chunks:", deleteChunksError);
 
     // 7. Insert chunks in batches
     const batchSize = 50;
@@ -151,20 +153,22 @@ export async function ingestDocument(
     }
 
     // 8. Update document status + page count
-    await supabase
+    const { error: indexedError } = await supabase
       .from("documents")
       .update({
         status: "indexed",
         page_count: pages.length,
       })
       .eq("id", documentId);
+    if (indexedError) console.error("[ingestion] Failed to set status to indexed:", indexedError);
 
     return { success: true, chunkCount: allChunks.length };
   } catch (err) {
-    await supabase
+    const { error: errorStatusError } = await supabase
       .from("documents")
       .update({ status: "error" })
       .eq("id", documentId);
+    if (errorStatusError) console.error("[ingestion] Failed to set status to error:", errorStatusError);
 
     return {
       success: false,

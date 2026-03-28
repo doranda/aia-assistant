@@ -50,7 +50,8 @@ export async function matchFAQ(
   const queryKeywords = extractKeywords(query);
   if (queryKeywords.length === 0) return null;
 
-  const { data: faqs } = await supabase.from("faqs").select("*");
+  const { data: faqs, error: faqsError } = await supabase.from("faqs").select("*");
+  if (faqsError) console.error("[search] Failed to fetch FAQs:", faqsError);
   if (!faqs || faqs.length === 0) return null;
 
   let bestMatch: { faq: FAQ; score: number } | null = null;
@@ -118,24 +119,26 @@ export async function searchDocuments(
 
   // 2. Also search by document title match (finds docs even when content is in another language)
   const titleConditions = keywords.map((kw) => `title.ilike.%${kw}%`).join(",");
-  const { data: titleDocs } = await supabase
+  const { data: titleDocs, error: titleDocsError } = await supabase
     .from("documents")
     .select("id")
     .eq("is_deleted", false)
     .eq("status", "indexed")
     .or(titleConditions)
     .limit(10);
+  if (titleDocsError) console.error("[search] Failed to fetch title-matched docs:", titleDocsError);
   const titleDocIds = (titleDocs || []).map((d) => d.id);
 
   let titleChunks: typeof data = [];
   if (titleDocIds.length > 0) {
-    const { data: tChunks } = await supabase
+    const { data: tChunks, error: tChunksError } = await supabase
       .from("chunks")
       .select(chunkSelect)
       .eq("documents.is_deleted", false)
       .eq("documents.status", "indexed")
       .in("document_id", titleDocIds)
       .limit(matchCount);
+    if (tChunksError) console.error("[search] Failed to fetch title-matched chunks:", tChunksError);
     titleChunks = tChunks || [];
   }
 

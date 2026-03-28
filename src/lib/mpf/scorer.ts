@@ -133,15 +133,16 @@ export async function getFundReturnsForPeriod(
 ): Promise<Record<string, number>> {
   const supabase = createAdminClient();
 
-  const { data: funds } = await supabase
+  const { data: funds, error: fundsError } = await supabase
     .from("mpf_funds")
     .select("id, fund_code")
     .eq("is_active", true);
+  if (fundsError) console.error("[scorer] Failed to fetch active funds:", fundsError);
 
   const returns: Record<string, number> = {};
 
   for (const fund of funds || []) {
-    const { data: startPrice } = await supabase
+    const { data: startPrice, error: startPriceError } = await supabase
       .from("mpf_prices")
       .select("nav")
       .eq("fund_id", fund.id)
@@ -149,8 +150,9 @@ export async function getFundReturnsForPeriod(
       .order("date", { ascending: false })
       .limit(1)
       .single();
+    if (startPriceError && startPriceError.code !== "PGRST116") console.error("[scorer] Failed to fetch start price for fund:", fund.fund_code, startPriceError);
 
-    const { data: endPrice } = await supabase
+    const { data: endPrice, error: endPriceError } = await supabase
       .from("mpf_prices")
       .select("nav")
       .eq("fund_id", fund.id)
@@ -158,6 +160,7 @@ export async function getFundReturnsForPeriod(
       .order("date", { ascending: false })
       .limit(1)
       .single();
+    if (endPriceError && endPriceError.code !== "PGRST116") console.error("[scorer] Failed to fetch end price for fund:", fund.fund_code, endPriceError);
 
     if (startPrice && endPrice && startPrice.nav > 0) {
       returns[fund.fund_code] = ((endPrice.nav - startPrice.nav) / startPrice.nav) * 100;
