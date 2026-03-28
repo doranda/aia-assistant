@@ -33,7 +33,7 @@ export function NewsFeed({ news }: { news: MpfNews[] }) {
   return (
     <div>
       {/* Filters */}
-      <div className="flex flex-wrap gap-6 mb-8">
+      <div className="flex flex-wrap gap-3 sm:gap-6 mb-8">
         <FilterGroup label="Region" items={REGIONS} value={region} onChange={setRegion} />
         <FilterGroup label="Category" items={CATEGORIES} value={category} onChange={setCategory} />
       </div>
@@ -45,7 +45,7 @@ export function NewsFeed({ news }: { news: MpfNews[] }) {
         <ol className="space-y-0 divide-y divide-zinc-800/60">
           {filtered.map((n) => (
             <li key={n.id} className="py-4 first:pt-0">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-2 sm:gap-4">
                 <div className="min-w-0">
                   <a
                     href={n.url || "#"}

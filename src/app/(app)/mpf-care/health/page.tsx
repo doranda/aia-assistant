@@ -25,7 +25,7 @@ export default async function HealthDashboardPage() {
   ]);
 
   return (
-    <main className="space-y-6">
+    <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 space-y-6">
       <header className="flex items-center gap-3">
         <Activity className="h-6 w-6 text-zinc-400" />
         <h1 className="text-2xl font-semibold tracking-tight">Pipeline Health</h1>

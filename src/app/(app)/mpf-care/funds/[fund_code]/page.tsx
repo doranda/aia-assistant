@@ -82,7 +82,7 @@ export default async function FundExplorerPage({
   const riskStars = "★".repeat(fund.risk_rating) + "☆".repeat(5 - fund.risk_rating);
 
   return (
-    <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
+    <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 xl:py-24">
       <header className="mb-12">
         <div className="flex items-center gap-3 mb-2">
           <a href="/mpf-care" className="text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors">
@@ -135,7 +135,7 @@ export default async function FundExplorerPage({
         <h2 id="returns-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300 mb-4">
           Performance
         </h2>
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
           {Object.entries(returns).map(([period, value]) => (
             <div key={period}>
               <div className="text-[11px] font-mono text-zinc-400">{period}</div>

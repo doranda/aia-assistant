@@ -7,7 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { cn } from "@/lib/utils";
 import { ILAS_CATEGORY_LABELS, ILAS_INSIGHT_DISCLAIMER } from "@/lib/ilas/constants";
 import type { IlasFund, IlasFundCategory, IlasFundWithLatestPrice } from "@/lib/ilas/types";
-import { TrendingUp, BarChart3, Newspaper, Filter } from "lucide-react";
+import { IlasPortfolioReference } from "@/components/ilas/portfolio-reference";
+import { TrendingUp, BarChart3, Newspaper, Filter, PieChart } from "lucide-react";
 import Link from "next/link";
 
 // ---------- Data fetching ----------
@@ -72,11 +73,47 @@ async function getIlasData(isDistribution: boolean) {
     .eq("is_active", true)
     .eq("is_distribution", true);
 
+  // 7. Get reference portfolio for the current tab
+  const portfolioType = isDistribution ? "distribution" : "accumulation";
+  const { data: portfolioRows, error: portfolioError } = await supabase
+    .from("ilas_reference_portfolio")
+    .select("fund_id, weight, note, updated_at")
+    .eq("portfolio_type", portfolioType);
+
+  if (portfolioError) console.error("[ilas-track] portfolio query failed:", portfolioError.code, portfolioError.message);
+
+  // Build portfolio funds with joined data
+  const portfolioFunds = (portfolioRows || [])
+    .map((row) => {
+      const fund = (funds || []).find((f) => f.id === row.fund_id);
+      if (!fund) return null;
+      const price = priceMap.get(fund.id);
+      return {
+        fund_code: fund.fund_code,
+        name_en: fund.name_en,
+        weight: row.weight,
+        note: row.note,
+        currency: fund.currency,
+        latest_nav: price?.nav ? Number(price.nav) : null,
+        daily_change_pct: price?.daily_change_pct ? Number(price.daily_change_pct) : null,
+      };
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== null)
+    .sort((a, b) => b.weight - a.weight);
+
+  const portfolioUpdatedAt = (portfolioRows || []).reduce(
+    (latest, r) => (r.updated_at > latest ? r.updated_at : latest),
+    "",
+  );
+
   return {
     fundsWithPrices,
     latestDate,
     accCount: accCount || 0,
     disCount: disCount || 0,
+    portfolioFunds,
+    portfolioType: portfolioType as "accumulation" | "distribution",
+    portfolioUpdatedAt,
   };
 }
 
@@ -248,7 +285,7 @@ export default async function IlasTrackPage({
 }) {
   const params = await searchParams;
   const isDistribution = params.tab === "distribution";
-  const { fundsWithPrices, latestDate, accCount, disCount } = await getIlasData(isDistribution);
+  const { fundsWithPrices, latestDate, accCount, disCount, portfolioFunds, portfolioType, portfolioUpdatedAt } = await getIlasData(isDistribution);
 
   return (
     <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 xl:py-24">
@@ -331,6 +368,24 @@ export default async function IlasTrackPage({
         </div>
         <IlasTopMovers funds={fundsWithPrices} />
       </section>
+
+      {/* Reference Portfolio */}
+      {portfolioFunds.length > 0 && (
+        <section aria-labelledby={`ilas-portfolio-${portfolioType}-heading`} className="mb-12 sm:mb-16">
+          <div className="flex items-center gap-2 mb-6">
+            <PieChart className="w-4 h-4 text-zinc-400" />
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
+              Reference Portfolio
+            </h2>
+          </div>
+          <IlasPortfolioReference
+            funds={portfolioFunds}
+            portfolioType={portfolioType}
+            priceDate={latestDate}
+            updatedAt={portfolioUpdatedAt}
+          />
+        </section>
+      )}
 
       {/* Fund Heatmap */}
       <section aria-labelledby="heatmap-heading" className="mb-12 sm:mb-16">

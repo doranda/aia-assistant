@@ -254,7 +254,7 @@ export default async function ScreenerPage({
 
       {/* Table */}
       <div className="mt-8 overflow-x-auto">
-        <table className="w-full border-collapse">
+        <table className="w-full border-collapse min-w-[640px]">
           <thead>
             <tr className="border-b border-zinc-800/60">
               {(
