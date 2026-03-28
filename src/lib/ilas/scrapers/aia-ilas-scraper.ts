@@ -25,14 +25,14 @@ function parseHtmlPrice(raw: unknown): { currency: string; price: number } | nul
   if (!raw) return null;
   const str = String(raw);
 
-  // Strip HTML tags
-  const stripped = str.replace(/<[^>]*>/g, "").trim();
+  // Strip HTML tags and entities
+  const stripped = str.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/[▼▲]/g, "").trim();
   if (!stripped) return null;
 
   // Match currency prefix + bracketed or plain number
-  // Patterns: "US$[19.8800]", "HK$12.3400", "US$19.8800", "RMB[5.1200]"
+  // Patterns: "US$[19.8800]", "HK$12.3400", "US$19.8800", "RMB[5.1200]", "EUR€[12.34]"
   const match = stripped.match(
-    /^(US\$|HK\$|RMB|EUR|GBP|JPY|AUD|CAD|SGD|NZD)\[?([\d.]+)\]?$/
+    /(US\$|HK\$|RMB|EUR€?|GBP|JPY|AUD|CAD|SGD|NZD)\[?([\d.]+)\]?/
   );
   if (!match) return null;
 
@@ -45,6 +45,7 @@ function parseHtmlPrice(raw: unknown): { currency: string; price: number } | nul
     "HK$": "HKD",
     RMB: "RMB",
     EUR: "EUR",
+    "EUR€": "EUR",
     GBP: "GBP",
     JPY: "JPY",
     AUD: "AUD",
@@ -67,13 +68,16 @@ function parseValuationDate(raw: unknown): string | null {
   if (!raw) return null;
   const str = String(raw).trim();
 
-  // Already YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // Strip brackets: "[03/26/2026]" → "03/26/2026"
+  const clean = str.replace(/[\[\]]/g, "").trim();
 
-  // DD/MM/YYYY (AIA's format)
-  const slashMatch = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+
+  // MM/DD/YYYY (AIA CorpWS format — confirmed from API response)
+  const slashMatch = clean.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (slashMatch) {
-    return `${slashMatch[3]}-${slashMatch[2]}-${slashMatch[1]}`;
+    return `${slashMatch[3]}-${slashMatch[1]}-${slashMatch[2]}`;
   }
 
   return null;
@@ -124,7 +128,7 @@ export async function scrapeILASPrices(): Promise<{
 
     for (const item of items) {
       try {
-        const fundCode: string = item.fund_code ?? item.fundCode ?? "";
+        const fundCode: string = item.code ?? item.fund_code ?? item.fundCode ?? "";
         if (!fundCode) continue;
 
         // Parse offer and bid prices (may contain HTML font tags)
