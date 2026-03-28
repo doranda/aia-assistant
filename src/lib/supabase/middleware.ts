@@ -1,7 +1,11 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_ROUTES = ["/mpf-care", "/ilas-track", "/dashboard", "/settings", "/api/mpf/rebalance-history"];
+const PROTECTED_ROUTES = [
+  "/dashboard", "/mpf-care", "/ilas-track", "/chat",
+  "/documents", "/faqs", "/team",
+  "/api/mpf/rebalance-history",
+];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -29,6 +33,12 @@ export async function updateSession(request: NextRequest) {
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Prevent caching of authenticated pages — critical for multi-user security
+  if (pathname.startsWith('/') && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/')) {
+    supabaseResponse.headers.set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+    supabaseResponse.headers.set('Pragma', 'no-cache');
   }
 
   return supabaseResponse;
