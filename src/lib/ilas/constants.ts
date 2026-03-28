@@ -272,9 +272,15 @@ export const ILAS_DEFENSIVE_FUNDS: Record<string, string[]> = {
 
 // ===== Rebalancer: Investment Profile =====
 
-export const ILAS_INVESTMENT_PROFILE = {
-  label: 'Balanced Growth (ILAS)',
-  description: 'Long-term wealth accumulation via insurance-linked funds',
+export const ILAS_INVESTMENT_PROFILE: Record<string, { label: string; description: string }> = {
+  accumulation: {
+    label: "Growth (ILAS Accumulation)",
+    description: "Long-term wealth accumulation via insurance-linked equity and multi-asset funds",
+  },
+  distribution: {
+    label: "Income (ILAS Distribution)",
+    description: "Income generation and capital preservation via insurance-linked income and bond funds",
+  },
 };
 
 // ===== Rebalancer: Config =====

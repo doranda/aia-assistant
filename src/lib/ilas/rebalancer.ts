@@ -17,7 +17,7 @@ import {
 } from "./portfolio-tracker";
 import type { IlasPortfolioType } from "./portfolio-tracker";
 import type { FundAllocation } from "./types";
-import { callGateway, parseJSON, detectDangerSignals } from "@/lib/mpf/rebalancer";
+import { callGateway, parseJSON } from "@/lib/mpf/rebalancer";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 const MODEL = "anthropic/claude-sonnet-4.6";
@@ -89,6 +89,41 @@ Return ONLY valid JSON (no markdown):
 { "funds": [{ "code": "XXX", "weight": 50, "reasoning": "why" }, ...], "summary": "1-2 sentence summary" }`;
 }
 
+// ===== ILAS-specific Danger Detection =====
+// Unlike MPF's detectDangerSignals which uses hardcoded MPF fund code fragments,
+// this version works with ILAS fund categories parsed from metrics text.
+
+function detectIlasDangerSignals(metricsText: string, equityFundCount: number): string {
+  const signals: string[] = [];
+
+  // Count equity funds with negative Sortino
+  const sortinoMatches = metricsText.match(/Sortino=(-[\d.]+)/g) || [];
+  const negSortino = sortinoMatches.filter(m => parseFloat(m.split("=")[1]) < 0).length;
+  if (equityFundCount > 0 && negSortino / equityFundCount > 0.5) {
+    signals.push("NEGATIVE SORTINO: >50% of equity funds have Sortino < 0");
+  }
+
+  // Deep drawdown detection
+  const ddMatches = metricsText.match(/MaxDD=(-[\d.]+)%/g) || [];
+  const deepDD = ddMatches.filter(m => parseFloat(m.match(/-[\d.]+/)?.[0] || "0") < -20).length;
+  if (equityFundCount > 0 && deepDD / equityFundCount > 0.4) {
+    signals.push("DEEP DRAWDOWN: >40% of equity funds have MaxDD < -20%");
+  }
+
+  // Negative momentum detection
+  const momMatches = metricsText.match(/Mom3M=(-[\d.]+)%/g) || [];
+  const negMom = momMatches.filter(m => parseFloat(m.match(/-[\d.]+/)?.[0] || "0") < -5).length;
+  if (equityFundCount > 0 && negMom / equityFundCount > 0.5) {
+    signals.push("NEGATIVE MOMENTUM: >50% of equity funds have negative 3M momentum");
+  }
+
+  if (signals.length >= 2) {
+    signals.unshift("⚠️ MULTIPLE DANGER SIGNALS — default MUST be defensive");
+  }
+
+  return signals.join("\n");
+}
+
 // ===== Quant Agent =====
 
 async function runIlasQuantAgent(
@@ -140,7 +175,7 @@ export async function evaluateAndRebalanceIlas(
     .from("ilas_insights")
     .select("id")
     .or("type.eq.alert,type.eq.rebalance_debate")
-    .or(`trigger.eq.portfolio_rebalance,trigger.eq.${triggerTag}`)
+    .eq("trigger", triggerTag)
     .gte("created_at", todayISO);
   if (todayError) console.error(`${logPrefix} Failed to fetch today's rebalances:`, todayError);
 
@@ -156,7 +191,7 @@ export async function evaluateAndRebalanceIlas(
       .from("ilas_insights")
       .select("created_at")
       .or("type.eq.alert,type.eq.rebalance_debate")
-      .or(`trigger.eq.portfolio_rebalance,trigger.eq.${triggerTag}`)
+      .eq("trigger", triggerTag)
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
@@ -294,15 +329,17 @@ export async function evaluateAndRebalanceIlas(
   const currentPortfolioText = currentHoldings.map(h => `${h.code} (${h.name}): ${h.weight}%`).join("\n");
   const availableFunds = (funds || []).map(f => `${f.fund_code} (${f.name_en})`).join(", ");
 
-  // ===== DANGER DETECTION =====
-  const dangerSignals = detectDangerSignals(metricsText);
+  // ===== DANGER DETECTION (ILAS-specific, category-based) =====
+  const equityFundCount = (funds || []).filter(f => f.category.startsWith("equity")).length;
+  const dangerSignals = detectIlasDangerSignals(metricsText, equityFundCount);
   if (dangerSignals) {
     console.log(`${logPrefix} ${dangerSignals}`);
   }
 
   // ===== PROFILE TEXT =====
+  const profile = ILAS_INVESTMENT_PROFILE[portfolioType];
   const profileText = [
-    `ILAS ${portfolioType.toUpperCase()} PORTFOLIO: ${ILAS_INVESTMENT_PROFILE.label} — ${ILAS_INVESTMENT_PROFILE.description}`,
+    `ILAS ${portfolioType.toUpperCase()} PORTFOLIO: ${profile.label} — ${profile.description}`,
     `PERSPECTIVE: Risk-first, defensive by default. Equity allocation must be EARNED with data.`,
     `YOUR JOB: Protect capital. When in doubt, the MORE CAUTIOUS approach wins.`,
   ].join("\n");
@@ -408,7 +445,7 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
     return { rebalanced: false, reason: "Mediator proposed empty portfolio" };
   }
 
-  // ===== HARD SAFETY GUARDRAIL =====
+  // ===== SAFETY WARNING (not enforced — scoring feedback loop teaches agents to self-correct) =====
   if (dangerSignals) {
     const defensiveSet = new Set(defensiveFunds);
     const equityWeight = newPortfolio
@@ -416,10 +453,12 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
       .reduce((sum, p) => sum + p.weight, 0);
 
     if (equityWeight > ILAS_REBALANCER_CONFIG.EQUITY_CEILING_ON_DANGER) {
-      console.warn(`${logPrefix} SAFETY OVERRIDE: agents proposed ${equityWeight}% equity despite danger signals. Capping at ${ILAS_REBALANCER_CONFIG.EQUITY_CEILING_ON_DANGER}%.`);
+      // SAFETY WARNING: agents proposed high equity despite danger signals
+      // Not enforced — scoring feedback loop teaches agents to self-correct
+      console.warn(`${logPrefix} SAFETY WARNING: agents proposed ${equityWeight}% equity despite danger signals (ceiling ${ILAS_REBALANCER_CONFIG.EQUITY_CEILING_ON_DANGER}%). Proceeding — feedback loop will score this decision.`);
       await sendDiscordAlert({
         title: `⚠️ ILAS Track — ${portfolioType} Safety Guardrail Warning`,
-        description: `Agents proposed **${equityWeight}% equity** despite active danger signals.\nDanger signals:\n${dangerSignals}\n\nProceeding with agent allocation but flagging for review.`,
+        description: `Agents proposed **${equityWeight}% equity** despite active danger signals.\nDanger signals:\n${dangerSignals}\n\nProceeding with agent allocation — scoring feedback loop will evaluate this decision.`,
         color: COLORS.yellow,
       });
     }
