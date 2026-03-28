@@ -104,13 +104,28 @@ export async function GET(req: NextRequest) {
   const date = today();
 
   try {
-    // Generate all sections in parallel using AI
+    // Fetch real news via Brave Search (parallel)
+    const [worldResults, hkResults, aiResults] = await Promise.all([
+      braveSearch("world news today important", 5),
+      braveSearch("Hong Kong news today Asia Pacific", 5),
+      braveSearch("AI artificial intelligence news today", 5),
+    ]);
+
+    // Generate all sections in parallel using AI + real search results
     const [worldNews, aiNews, businessDiscovery, wildCard] = await Promise.all([
       generateSection(
         "world-news",
         `You are a news curator for a Hong Kong-based entrepreneur. Today is ${date}.
 
-Generate a concise news briefing with 4-5 of the most important stories from today/yesterday. Cover:
+Here are real news search results from today:
+
+WORLD NEWS:
+${worldResults || "No search results available"}
+
+HONG KONG / ASIA NEWS:
+${hkResults || "No search results available"}
+
+From these results, pick the 4-5 most important stories and rewrite as a concise briefing:
 - 1-2 world/geopolitics stories that impact business
 - 1-2 Hong Kong / Asia-Pacific stories
 - 1 finance/markets story
@@ -118,23 +133,24 @@ Generate a concise news briefing with 4-5 of the most important stories from tod
 For each story:
 - Bold headline (max 80 chars)
 - 1-line summary with why it matters to a HK business owner
-- No URLs needed
 
-Format as bullet points. Keep total under 1500 chars.`
+If search results are empty, use your knowledge of current events. Keep total under 1500 chars.`
       ),
 
       generateSection(
         "ai-tech",
         `You are an AI/tech news curator. Today is ${date}.
 
-Generate 3-4 of the most significant AI and technology stories from the past 48 hours. Focus on:
+Here are real AI news search results from today:
+${aiResults || "No search results available"}
+
+From these results, pick 3-4 of the most significant stories and rewrite concisely. Focus on:
 - New AI model releases or major updates
 - AI tools that could impact small business operations
 - Tech industry moves (acquisitions, launches, shutdowns)
-- AI regulation or policy changes
 
 For each: bold headline + 1-line "why it matters for someone building AI products."
-Keep total under 1200 chars.`
+If search results are empty, use your knowledge. Keep total under 1200 chars.`
       ),
 
       generateSection(
@@ -222,6 +238,45 @@ Keep under 800 chars.`
       { error: "Briefing generation failed" },
       { status: 500 }
     );
+  }
+}
+
+async function braveSearch(query: string, count = 5): Promise<string> {
+  const apiKey = process.env.BRAVE_API_KEY;
+  if (!apiKey) return "";
+
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      count: String(count),
+      freshness: "pd", // past day
+    });
+    const res = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?${params}`,
+      {
+        headers: {
+          Accept: "application/json",
+          "Accept-Encoding": "gzip",
+          "X-Subscription-Token": apiKey,
+        },
+      }
+    );
+    if (!res.ok) {
+      console.error(`[briefing] Brave search failed: ${res.status}`);
+      return "";
+    }
+    const data = await res.json();
+    const results = (data.web?.results || [])
+      .slice(0, count)
+      .map(
+        (r: { title: string; description: string; url: string }) =>
+          `- **${r.title}**: ${r.description}`
+      )
+      .join("\n");
+    return results;
+  } catch (err) {
+    console.error("[briefing] Brave search error:", err);
+    return "";
   }
 }
 
