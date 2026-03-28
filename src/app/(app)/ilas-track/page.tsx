@@ -53,8 +53,8 @@ async function getIlasData(isDistribution: boolean) {
     const price = priceMap.get(f.id);
     return {
       ...f,
-      latest_nav: price?.nav || null,
-      daily_change_pct: price?.daily_change_pct || null,
+      latest_nav: price?.nav ?? null,
+      daily_change_pct: price?.daily_change_pct ?? null,
       price_date: price?.date || null,
     };
   });

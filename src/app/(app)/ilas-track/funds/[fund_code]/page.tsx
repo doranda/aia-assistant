@@ -2,6 +2,7 @@
 // ILAS Track — Individual fund detail page
 
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ILAS_CATEGORY_LABELS } from "@/lib/ilas/constants";
 import type {
@@ -72,12 +73,13 @@ export default async function IlasFundDetailPage({
   const supabase = createAdminClient();
 
   // --- Fund ---
-  const { data: fund } = await supabase
+  const { data: fund, error: fundErr } = await supabase
     .from("ilas_funds")
     .select("*")
     .eq("fund_code", fund_code)
     .single();
 
+  if (fundErr) console.error("[ilas-fund-detail] fund query error:", fundErr);
   if (!fund) notFound();
 
   const f = fund as IlasFund;
@@ -87,12 +89,14 @@ export default async function IlasFundDetailPage({
     .toISOString()
     .split("T")[0];
 
-  const { data: prices } = await supabase
+  const { data: prices, error: pricesErr } = await supabase
     .from("ilas_prices")
     .select("date, nav, daily_change_pct")
     .eq("fund_id", f.id)
     .gte("date", cutoffDate)
     .order("date", { ascending: true });
+
+  if (pricesErr) console.error("[ilas-fund-detail] prices query error:", pricesErr);
 
   const priceList = (prices || []) as Pick<IlasPrice, "date" | "nav" | "daily_change_pct">[];
 
@@ -100,10 +104,12 @@ export default async function IlasFundDetailPage({
   const latest = priceList.length > 0 ? priceList[priceList.length - 1] : null;
 
   // --- Risk metrics ---
-  const { data: allMetrics } = await supabase
+  const { data: allMetrics, error: metricsErr } = await supabase
     .from("ilas_fund_metrics")
     .select("*")
     .eq("fund_id", f.id);
+
+  if (metricsErr) console.error("[ilas-fund-detail] metrics query error:", metricsErr);
 
   const metricsMap: Record<MetricPeriod, IlasFundMetrics | null> = {
     "1y": null,
@@ -151,12 +157,12 @@ export default async function IlasFundDetailPage({
     <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 xl:py-24">
       {/* Back link */}
       <nav className="mb-6">
-        <a
+        <Link
           href="/ilas-track"
           className="text-[11px] font-mono text-zinc-400 hover:text-zinc-200 transition-colors py-2 inline-block"
         >
           ← ILAS Track
-        </a>
+        </Link>
       </nav>
 
       {/* ---------- Header ---------- */}

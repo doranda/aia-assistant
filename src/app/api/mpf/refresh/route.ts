@@ -1,7 +1,6 @@
 // src/app/api/mpf/refresh/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { canTriggerMpfRefresh } from "@/lib/permissions";
 import { scrapeAAStocksPrices, upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
 import { fetchNews } from "@/lib/mpf/scrapers/news-collector";

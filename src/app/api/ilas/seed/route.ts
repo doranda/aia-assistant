@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     is_distribution: fund.is_distribution,
     fund_house: fund.fund_house,
     fund_size: fund.fund_size || null,
+    settlement_days: 3,
     is_active: true,
   }));
 

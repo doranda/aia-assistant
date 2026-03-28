@@ -26,10 +26,16 @@ export async function POST(req: NextRequest) {
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<{ fund_code: string; date: string; nav: number }>(sheet);
+  let rows: { fund_code: string; date: string; nav: number }[];
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json<{ fund_code: string; date: string; nav: number }>(sheet);
+  } catch (err) {
+    console.error("[upload] XLSX parse error:", err);
+    return NextResponse.json({ error: "Invalid spreadsheet format" }, { status: 400 });
+  }
 
   const prices = rows
     .filter((r) => r.fund_code && r.date && r.nav)

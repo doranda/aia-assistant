@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       .limit(50);
 
     // Determine which need scoring
-    const toScore: { type: "live" | "backtest"; id: string; debateLog: string; allocation: any; decisionDate: string }[] = [];
+    const toScore: { type: "live" | "backtest"; id: string; debateLog: string; allocation: { code: string; weight: number }[]; decisionDate: string }[] = [];
 
     for (const insight of unscoredLive || []) {
       // Check which periods are unscored

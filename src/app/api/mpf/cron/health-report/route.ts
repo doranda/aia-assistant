@@ -18,12 +18,22 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient();
 
-  const [pipeline, freshness, coverage, outliers] = await Promise.all([
-    getPipelineStatus(supabase, 1),
-    getDataFreshness(supabase),
-    getMissingData(supabase, 7),
-    getOutliers(supabase),
-  ]);
+  let pipeline: Awaited<ReturnType<typeof getPipelineStatus>>;
+  let freshness: Awaited<ReturnType<typeof getDataFreshness>>;
+  let coverage: Awaited<ReturnType<typeof getMissingData>>;
+  let outliers: Awaited<ReturnType<typeof getOutliers>>;
+
+  try {
+    [pipeline, freshness, coverage, outliers] = await Promise.all([
+      getPipelineStatus(supabase, 1),
+      getDataFreshness(supabase),
+      getMissingData(supabase, 7),
+      getOutliers(supabase),
+    ]);
+  } catch (err) {
+    console.error("[health-report] Failed to gather health data:", err);
+    return NextResponse.json({ error: "Health data collection failed" }, { status: 500 });
+  }
 
   const hasFailures = pipeline.some((r) => r.status === "failed");
   const hasStale = freshness.some((f) => f.level === "red");

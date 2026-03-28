@@ -84,8 +84,8 @@ async function getScreenerData() {
     const metric = metricsMap.get(f.id);
     return {
       ...f,
-      latest_nav: price?.nav || null,
-      daily_change_pct: price?.daily_change_pct || null,
+      latest_nav: price?.nav ?? null,
+      daily_change_pct: price?.daily_change_pct ?? null,
       price_date: price?.date || null,
       sharpe_ratio: metric?.sharpe_ratio ?? null,
       sortino_ratio: metric?.sortino_ratio ?? null,

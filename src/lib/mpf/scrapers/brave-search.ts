@@ -1,4 +1,5 @@
-// src/lib/mpf/scrapers/brave-search.ts — Backfill NAV data for 5 missing funds
+// src/lib/mpf/scrapers/brave-search.ts — DEPRECATED: Dead code, not imported anywhere
+// TODO: Remove this file if no longer needed
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DISCONTINUED_FUNDS, AIA_FUNDS } from "../constants";
 

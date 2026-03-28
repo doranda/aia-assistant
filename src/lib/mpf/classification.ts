@@ -107,7 +107,7 @@ export async function classifyUnclassifiedNews(): Promise<{ classified: number; 
   const results = await Promise.allSettled(
     unclassified.map(async (article) => {
       const result = await classifyArticle(article.headline, article.summary);
-      await supabase
+      const { error: updateErr } = await supabase
         .from("mpf_news")
         .update({
           sentiment: result.sentiment,
@@ -117,6 +117,7 @@ export async function classifyUnclassifiedNews(): Promise<{ classified: number; 
           is_high_impact: result.is_high_impact,
         })
         .eq("id", article.id);
+      if (updateErr) console.error(`[classification] update error for ${article.id}:`, updateErr);
       return result;
     })
   );

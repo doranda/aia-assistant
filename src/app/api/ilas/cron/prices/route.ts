@@ -20,7 +20,12 @@ export async function POST(req: Request) {
   }
 
   const start = Date.now();
-  const body = await req.json();
+  let body: { prices?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
   const prices = body.prices;
 
   if (!Array.isArray(prices) || prices.length === 0) {

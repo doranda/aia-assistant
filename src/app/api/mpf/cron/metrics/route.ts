@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
         const hasData = Object.values(metrics).some(v => v !== null);
         if (!hasData) continue;
 
-        await supabase
+        const { error: upsertErr } = await supabase
           .from("mpf_fund_metrics")
           .upsert(
             {
@@ -53,6 +53,11 @@ export async function GET(req: NextRequest) {
             },
             { onConflict: "fund_id,period" }
           );
+
+        if (upsertErr) {
+          console.error(`[metrics] upsert error for ${fund.fund_code}/${period}:`, upsertErr);
+          continue;
+        }
 
         totalUpserted++;
       }

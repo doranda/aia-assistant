@@ -43,8 +43,8 @@ export function PipelineStatus({ data }: { data: PipelineRunStatus[] }) {
         <CardTitle className="text-base">Pipeline Status (7 days)</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          <div className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 text-xs text-zinc-300">
+        <div className="space-y-3 overflow-x-auto">
+          <div className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 text-xs text-zinc-300 min-w-[480px]">
             <div />
             {days.map((d) => (
               <div key={d} className="text-center">
@@ -53,7 +53,7 @@ export function PipelineStatus({ data }: { data: PipelineRunStatus[] }) {
             ))}
           </div>
           {SCRAPERS.map((scraper) => (
-            <div key={scraper} className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 items-center">
+            <div key={scraper} className="grid grid-cols-[100px_repeat(7,1fr)] gap-2 items-center min-w-[480px]">
               <div className="text-sm text-zinc-400">{SCRAPER_LABELS[scraper] || scraper}</div>
               {days.map((day) => {
                 const run = statusMap.get(scraper)?.get(day);
