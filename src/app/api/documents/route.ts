@@ -46,80 +46,85 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  let formData: FormData;
   try {
-    formData = await request.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
-  }
-  const file = formData.get("file") as File | null;
-  const category = formData.get("category") as string;
-  const company = formData.get("company") as string | null;
-  const tags = formData.get("tags") as string | null;
+    const supabase = await createClient();
 
-  if (!file || !category) {
-    return NextResponse.json({ error: "File and category are required" }, { status: 400 });
-  }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (file.type !== "application/pdf") {
-    return NextResponse.json({ error: "Only PDF files allowed" }, { status: 400 });
-  }
-  if (file.size > 50 * 1024 * 1024) {
-    return NextResponse.json({ error: "File exceeds 50MB limit" }, { status: 400 });
-  }
-
-  const fileName = `${user.id}/${Date.now()}-${file.name}`;
-  const { error: uploadError } = await supabase.storage
-    .from("documents")
-    .upload(fileName, file, { contentType: "application/pdf", upsert: false });
-
-  if (uploadError) {
-    return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 });
-  }
-
-  const { data: doc, error: dbError } = await supabase
-    .from("documents")
-    .insert({
-      title: file.name.replace(/\.pdf$/i, ""),
-      category,
-      source: "upload",
-      company: company || null,
-      tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
-      file_path: fileName,
-      file_size: file.size,
-      status: "pending",
-      uploaded_by: user.id,
-    })
-    .select()
-    .single();
-
-  if (dbError) {
-    await supabase.storage.from("documents").remove([fileName]);
-    return NextResponse.json({ error: `Database error: ${dbError.message}` }, { status: 500 });
-  }
-
-  // Trigger ingestion (fire and forget — runs async)
-  ingestDocument(supabase, doc.id).then((result) => {
-    if (result.success) {
-      console.log(`Ingestion complete: ${doc.id}, ${result.chunkCount} chunks`);
-    } else {
-      console.error(`Ingestion failed for ${doc.id}:`, result.error);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-  }).catch((err) => {
-    console.error("Ingestion crashed:", err);
-  });
 
-  return NextResponse.json(doc, { status: 201 });
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+    }
+    const file = formData.get("file") as File | null;
+    const category = formData.get("category") as string;
+    const company = formData.get("company") as string | null;
+    const tags = formData.get("tags") as string | null;
+
+    if (!file || !category) {
+      return NextResponse.json({ error: "File and category are required" }, { status: 400 });
+    }
+
+    if (file.type !== "application/pdf") {
+      return NextResponse.json({ error: "Only PDF files allowed" }, { status: 400 });
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      return NextResponse.json({ error: "File exceeds 50MB limit" }, { status: 400 });
+    }
+
+    const fileName = `${user.id}/${Date.now()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from("documents")
+      .upload(fileName, file, { contentType: "application/pdf", upsert: false });
+
+    if (uploadError) {
+      return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 });
+    }
+
+    const { data: doc, error: dbError } = await supabase
+      .from("documents")
+      .insert({
+        title: file.name.replace(/\.pdf$/i, ""),
+        category,
+        source: "upload",
+        company: company || null,
+        tags: tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+        file_path: fileName,
+        file_size: file.size,
+        status: "pending",
+        uploaded_by: user.id,
+      })
+      .select()
+      .single();
+
+    if (dbError) {
+      await supabase.storage.from("documents").remove([fileName]);
+      return NextResponse.json({ error: `Database error: ${dbError.message}` }, { status: 500 });
+    }
+
+    // Trigger ingestion (fire and forget — runs async)
+    ingestDocument(supabase, doc.id).then((result) => {
+      if (result.success) {
+        console.log(`Ingestion complete: ${doc.id}, ${result.chunkCount} chunks`);
+      } else {
+        console.error(`Ingestion failed for ${doc.id}:`, result.error);
+      }
+    }).catch((err) => {
+      console.error("Ingestion crashed:", err);
+    });
+
+    return NextResponse.json(doc, { status: 201 });
+  } catch (err) {
+    console.error("[documents] POST error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function DELETE(request: Request) {

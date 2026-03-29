@@ -132,7 +132,7 @@ export async function searchDocuments(
   if (titleDocsError) console.error("[search] Failed to fetch title-matched docs:", titleDocsError);
   const titleDocIds = (titleDocs || []).map((d) => d.id);
 
-  let titleChunks: typeof data = [];
+  let titleChunks: Awaited<typeof query_builder>["data"] = [];
   if (titleDocIds.length > 0) {
     const { data: tChunks, error: tChunksError } = await supabase
       .from("chunks")

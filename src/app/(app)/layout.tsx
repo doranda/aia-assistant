@@ -28,27 +28,30 @@ export default async function AppLayout({
 
   // Check pending delete requests for admin/manager badge
   let pendingCount = 0;
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .single();
+  if (profileError) console.error("[layout] Failed to fetch profile:", profileError);
 
   const role = (profile?.role || "agent") as UserRole;
   if (canApproveDeletions(role)) {
-    const { count } = await supabase
+    const { count, error: deleteError } = await supabase
       .from("delete_requests")
       .select("*", { count: "exact", head: true })
       .eq("status", "pending");
+    if (deleteError) console.error("[layout] Failed to fetch delete requests:", deleteError);
     pendingCount = count || 0;
   }
 
   // Check if MPF pipeline is healthy (successful scraper run in last 12h = green dot)
-  const { count: mpfAlertCount } = await supabase
+  const { count: mpfAlertCount, error: scraperError } = await supabase
     .from("scraper_runs")
     .select("*", { count: "exact", head: true })
     .eq("status", "success")
     .gte("run_at", new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString());
+  if (scraperError) console.error("[layout] Failed to fetch scraper runs:", scraperError);
 
   return (
     <>

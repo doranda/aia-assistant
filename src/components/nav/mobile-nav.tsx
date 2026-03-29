@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, MessageSquare, BarChart3, FileText, TrendingUp } from "lucide-react";
+import { LayoutDashboard, MessageSquare, BarChart3, FileText, TrendingUp, BookOpen, Users } from "lucide-react";
 
 const navItems = [
   { label: "Home", href: "/dashboard", icon: LayoutDashboard },
@@ -10,6 +10,8 @@ const navItems = [
   { label: "ILAS", href: "/ilas-track", icon: BarChart3 },
   { label: "Chat", href: "/chat", icon: MessageSquare },
   { label: "Docs", href: "/documents", icon: FileText },
+  { label: "FAQs", href: "/faqs", icon: BookOpen },
+  { label: "Team", href: "/team", icon: Users },
 ];
 
 export function MobileNav() {
@@ -27,7 +29,7 @@ export function MobileNav() {
               key={item.href}
               onClick={() => router.push(item.href)}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 min-w-[44px] min-h-[44px] w-16 h-full transition-colors cursor-pointer",
+                "flex flex-col items-center justify-center gap-1 min-w-[44px] min-h-[44px] flex-1 h-full transition-colors cursor-pointer",
                 isActive ? "text-[#D71920]" : "text-zinc-600"
               )}
             >

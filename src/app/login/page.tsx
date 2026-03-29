@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
@@ -22,7 +23,13 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <LoginForm />
+        <Suspense fallback={<div className="space-y-6 animate-pulse">
+          <div className="space-y-2"><div className="h-4 w-12 rounded bg-white/5" /><div className="h-12 rounded-xl bg-white/5" /></div>
+          <div className="space-y-2"><div className="h-4 w-16 rounded bg-white/5" /><div className="h-12 rounded-xl bg-white/5" /></div>
+          <div className="h-12 rounded-full bg-white/5" />
+        </div>}>
+          <LoginForm />
+        </Suspense>
 
         <p className="text-center text-xs text-gray-8">
           Contact your team admin for an account
