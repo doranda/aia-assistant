@@ -7,11 +7,12 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("popular_queries")
       .select("query_text, count")
       .order("count", { ascending: false })
       .limit(6);
+    if (error) console.error("[popular-queries] query failed:", error);
 
     return NextResponse.json(data || []);
   } catch (err) {

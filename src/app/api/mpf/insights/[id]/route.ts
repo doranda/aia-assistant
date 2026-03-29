@@ -12,11 +12,12 @@ export async function GET(
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { data: insight } = await supabase
+    const { data: insight, error: insightError } = await supabase
       .from("mpf_insights")
       .select("id, status, content_en, content_zh, type, trigger, created_at")
       .eq("id", id)
       .single();
+    if (insightError) console.error("[mpf/insights/[id]] query failed:", insightError);
 
     if (!insight) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

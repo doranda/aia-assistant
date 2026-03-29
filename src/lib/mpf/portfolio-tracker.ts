@@ -27,7 +27,8 @@ let holidayCache: Set<string> | null = null;
 export async function loadHKHolidays(): Promise<Set<string>> {
   if (holidayCache) return holidayCache;
   const supabase = createAdminClient();
-  const { data } = await supabase.from("mpf_hk_holidays").select("date");
+  const { data, error: holidayError } = await supabase.from("mpf_hk_holidays").select("date");
+  if (holidayError) console.error("[mpf-tracker] loadHKHolidays holidays query:", holidayError);
   holidayCache = new Set((data || []).map((h) => h.date));
   return holidayCache;
 }
@@ -105,12 +106,13 @@ export async function canSubmitSwitch(): Promise<SwitchGateResult> {
   const supabase = createAdminClient();
 
   // Rule 1: No switch while one is active
-  const { data: active } = await supabase
+  const { data: active, error: activeError } = await supabase
     .from("mpf_pending_switches")
     .select("*")
     .in("status", ["pending", "awaiting_approval"])
     .limit(1)
     .single();
+  if (activeError) console.error("[mpf-tracker] canSubmitSwitch active switch query:", activeError);
 
   if (active) {
     return {
@@ -121,13 +123,14 @@ export async function canSubmitSwitch(): Promise<SwitchGateResult> {
   }
 
   // Rule 2: 7-day cooldown after last settlement
-  const { data: lastSettled } = await supabase
+  const { data: lastSettled, error: lastSettledError } = await supabase
     .from("mpf_pending_switches")
     .select("settled_at, settlement_date")
     .eq("status", "settled")
     .order("settled_at", { ascending: false })
     .limit(1)
     .single();
+  if (lastSettledError) console.error("[mpf-tracker] canSubmitSwitch lastSettled query:", lastSettledError);
 
   if (lastSettled?.settlement_date) {
     const today = new Date().toISOString().split("T")[0];
@@ -156,20 +159,22 @@ export async function checkGPFLimit(
   const supabase = createAdminClient();
   const yearStart = new Date().getUTCFullYear() + "-01-01";
   // Count distinct switches involving GPF (not individual transaction rows)
-  const { data: gpfSwitches } = await supabase
+  const { data: gpfSwitches, error: gpfError } = await supabase
     .from("mpf_pending_switches")
     .select("id")
     .in("status", ["pending", "settled"])
     .gte("created_at", yearStart);
+  if (gpfError) console.error("[mpf-tracker] checkGPFLimit gpfSwitches query:", gpfError);
 
   // Filter to switches where GPF appears in old or new allocation
   let gpfCount = 0;
   for (const sw of gpfSwitches || []) {
-    const { data: full } = await supabase
+    const { data: full, error: fullError } = await supabase
       .from("mpf_pending_switches")
       .select("old_allocation, new_allocation")
       .eq("id", sw.id)
       .single();
+    if (fullError) console.error("[mpf-tracker] checkGPFLimit full switch details:", fullError);
     if (!full) continue;
     const allFunds = [
       ...((full.old_allocation as FundAllocation[]) || []),
@@ -429,19 +434,21 @@ async function getExactNav(
   dateStr: string
 ): Promise<number | null> {
   const supabase = createAdminClient();
-  const { data: fund } = await supabase
+  const { data: fund, error: fundError } = await supabase
     .from("mpf_funds")
     .select("id")
     .eq("fund_code", fundCode)
     .single();
+  if (fundError) console.error("[mpf-tracker] getExactNav fund lookup:", fundError);
   if (!fund) return null;
 
-  const { data: price } = await supabase
+  const { data: price, error: priceError } = await supabase
     .from("mpf_prices")
     .select("nav")
     .eq("fund_id", fund.id)
     .eq("date", dateStr)
     .single();
+  if (priceError) console.error("[mpf-tracker] getExactNav price lookup:", priceError);
 
   return price ? Number(price.nav) : null;
 }
@@ -452,14 +459,15 @@ async function getClosestNav(
   dateStr: string
 ): Promise<number | null> {
   const supabase = createAdminClient();
-  const { data: fund } = await supabase
+  const { data: fund, error: fundError } = await supabase
     .from("mpf_funds")
     .select("id")
     .eq("fund_code", fundCode)
     .single();
+  if (fundError) console.error("[mpf-tracker] getClosestNav fund lookup:", fundError);
   if (!fund) return null;
 
-  const { data: price } = await supabase
+  const { data: price, error: priceError } = await supabase
     .from("mpf_prices")
     .select("nav")
     .eq("fund_id", fund.id)
@@ -467,6 +475,7 @@ async function getClosestNav(
     .order("date", { ascending: false })
     .limit(1)
     .single();
+  if (priceError) console.error("[mpf-tracker] getClosestNav price lookup:", priceError);
 
   return price ? Number(price.nav) : null;
 }
@@ -479,11 +488,12 @@ export async function processSettlements(): Promise<{
   const today = new Date().toISOString().split("T")[0];
 
   // Find switches due for settlement today or earlier
-  const { data: dueSwitches } = await supabase
+  const { data: dueSwitches, error: dueError } = await supabase
     .from("mpf_pending_switches")
     .select("*")
     .eq("status", "pending")
     .lte("settlement_date", today);
+  if (dueError) throw new Error(`[mpf-tracker] processSettlements dueSwitches query: ${dueError.message}`);
 
   const settled: string[] = [];
   const blocked: string[] = [];
@@ -505,20 +515,26 @@ export async function processSettlements(): Promise<{
     const oldAlloc = sw.old_allocation as FundAllocation[];
 
     // Fetch the sell-date NAV row explicitly (not just "latest")
-    const { data: sellDayNav } = await supabase
+    const { data: sellDayNav, error: sellNavError } = await supabase
       .from("mpf_portfolio_nav")
       .select("nav, holdings, is_cash")
       .eq("date", sw.sell_date)
       .single();
+    if (sellNavError) console.error("[mpf-tracker] processSettlements sellDayNav query:", sellNavError);
 
     // Fall back to most recent row before sell date if sell-day row missing
-    const navRow = sellDayNav || (await supabase
-      .from("mpf_portfolio_nav")
-      .select("nav, holdings, is_cash")
-      .lte("date", sw.sell_date)
-      .order("date", { ascending: false })
-      .limit(1)
-      .single()).data;
+    let navRow = sellDayNav;
+    if (!navRow) {
+      const { data: fallbackNav, error: fallbackNavError } = await supabase
+        .from("mpf_portfolio_nav")
+        .select("nav, holdings, is_cash")
+        .lte("date", sw.sell_date)
+        .order("date", { ascending: false })
+        .limit(1)
+        .single();
+      if (fallbackNavError) console.error("[mpf-tracker] processSettlements fallback NAV query:", fallbackNavError);
+      navRow = fallbackNav;
+    }
 
     if (!navRow) {
       // First settlement ever — use base NAV
@@ -675,11 +691,12 @@ export async function computeAndStoreNav(
   }
 
   // Skip if settle_switch already wrote an authoritative row for this date
-  const { data: existingRow } = await supabase
+  const { data: existingRow, error: existingError } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, is_cash, holdings")
     .eq("date", targetDate)
     .single();
+  if (existingError) console.error("[mpf-tracker] computeAndStoreNav existingRow query:", existingError);
 
   if (existingRow && !existingRow.is_cash && existingRow.holdings && (existingRow.holdings as FundHolding[]).length > 0) {
     // Row was written by settle_switch — don't overwrite
@@ -687,12 +704,13 @@ export async function computeAndStoreNav(
   }
 
   // Check if there's a pending switch (we're in cash)
-  const { data: pendingSwitch } = await supabase
+  const { data: pendingSwitch, error: pendingError } = await supabase
     .from("mpf_pending_switches")
     .select("*")
     .eq("status", "pending")
     .limit(1)
     .single();
+  if (pendingError) console.error("[mpf-tracker] computeAndStoreNav pendingSwitch query:", pendingError);
 
   const isCashDay =
     pendingSwitch &&
@@ -700,13 +718,14 @@ export async function computeAndStoreNav(
     targetDate < pendingSwitch.settlement_date;
 
   // Get previous NAV
-  const { data: navRow } = await supabase
+  const { data: navRow, error: navError } = await supabase
     .from("mpf_portfolio_nav")
     .select("nav, holdings, is_cash")
     .lt("date", targetDate)
     .order("date", { ascending: false })
     .limit(1)
     .single();
+  if (navError) console.error("[mpf-tracker] computeAndStoreNav navRow query:", navError);
 
   let nav: number;
   let holdings: FundHolding[];
@@ -716,12 +735,14 @@ export async function computeAndStoreNav(
     // Bootstrap: first day ever
     nav = PORTFOLIO_BASE_NAV;
     // Get current portfolio
-    const { data: portfolio } = await supabase
+    const { data: portfolio, error: portfolioError } = await supabase
       .from("mpf_reference_portfolio")
       .select("fund_id, weight");
-    const { data: funds } = await supabase
+    if (portfolioError) console.error("[mpf-tracker] computeAndStoreNav portfolio query:", portfolioError);
+    const { data: funds, error: fundsError } = await supabase
       .from("mpf_funds")
       .select("id, fund_code");
+    if (fundsError) console.error("[mpf-tracker] computeAndStoreNav funds query:", fundsError);
     const fundMap = new Map((funds || []).map((f) => [f.id, f.fund_code]));
 
     holdings = [];

@@ -60,11 +60,12 @@ export async function POST(request: Request) {
 
   // Track query for learning — upsert into popular_queries
   const queryHash = message.trim().toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
-  const { data: existingQuery } = await supabase
+  const { data: existingQuery, error: queryError } = await supabase
     .from("popular_queries")
     .select("id, count")
     .eq("query_hash", queryHash)
     .single();
+  if (queryError && queryError.code !== "PGRST116") console.error("[chat] popular_queries lookup:", queryError);
 
   if (existingQuery) {
     await supabase
@@ -84,11 +85,12 @@ export async function POST(request: Request) {
     let faqConvId = conversationId;
     if (!faqConvId) {
       const title = message.length > 60 ? message.substring(0, 57) + "..." : message;
-      const { data: conv } = await supabase
+      const { data: conv, error: convError } = await supabase
         .from("conversations")
         .insert({ user_id: user.id, title })
         .select()
         .single();
+      if (convError) console.error("[chat] FAQ conversation insert failed:", convError);
       if (conv) faqConvId = conv.id;
     }
 
@@ -164,12 +166,13 @@ export async function POST(request: Request) {
   }
 
   // 3. Load conversation history BEFORE inserting new message (avoids duplication)
-  const { data: history } = await supabase
+  const { data: history, error: historyError } = await supabase
     .from("messages")
     .select("role, content")
     .eq("conversation_id", convId)
     .order("created_at", { ascending: true })
     .limit(10);
+  if (historyError) console.error("[chat] history load failed:", historyError);
 
   // 4. Save user message
   await supabase.from("messages").insert({

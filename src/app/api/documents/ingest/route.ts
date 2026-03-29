@@ -24,12 +24,13 @@ export async function POST(request: Request) {
 
     // Batch: ingest all pending/error documents
     if (mode === "all-pending") {
-      const { data: docs } = await supabase
+      const { data: docs, error: docsError } = await supabase
         .from("documents")
         .select("id, title, status")
         .eq("is_deleted", false)
         .in("status", ["pending", "error"])
         .order("created_at");
+      if (docsError) console.error("[ingest] pending docs query failed:", docsError);
 
       if (!docs || docs.length === 0) {
         return NextResponse.json({ message: "No pending documents", processed: 0, success: 0, results: [] });
@@ -47,11 +48,12 @@ export async function POST(request: Request) {
 
     // Re-ingest ALL documents (full rebuild)
     if (mode === "rebuild-all") {
-      const { data: docs } = await supabase
+      const { data: docs, error: rebuildError } = await supabase
         .from("documents")
         .select("id, title")
         .eq("is_deleted", false)
         .order("created_at");
+      if (rebuildError) console.error("[ingest] rebuild docs query failed:", rebuildError);
 
       if (!docs || docs.length === 0) {
         return NextResponse.json({ message: "No documents", processed: 0, success: 0, results: [] });

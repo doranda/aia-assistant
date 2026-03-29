@@ -80,19 +80,21 @@ async function getExactNav(
   dateStr: string
 ): Promise<number | null> {
   const supabase = createAdminClient();
-  const { data: fund } = await supabase
+  const { data: fund, error: fundError } = await supabase
     .from("ilas_funds")
     .select("id")
     .eq("fund_code", fundCode)
     .single();
+  if (fundError) console.error("[ilas-tracker] getExactNav fund lookup:", fundError);
   if (!fund) return null;
 
-  const { data: price } = await supabase
+  const { data: price, error: priceError } = await supabase
     .from("ilas_prices")
     .select("nav")
     .eq("fund_id", fund.id)
     .eq("date", dateStr)
     .single();
+  if (priceError) console.error("[ilas-tracker] getExactNav price lookup:", priceError);
 
   return price ? Number(price.nav) : null;
 }
@@ -103,14 +105,15 @@ async function getClosestNav(
   dateStr: string
 ): Promise<number | null> {
   const supabase = createAdminClient();
-  const { data: fund } = await supabase
+  const { data: fund, error: fundError } = await supabase
     .from("ilas_funds")
     .select("id")
     .eq("fund_code", fundCode)
     .single();
+  if (fundError) console.error("[ilas-tracker] getClosestNav fund lookup:", fundError);
   if (!fund) return null;
 
-  const { data: price } = await supabase
+  const { data: price, error: priceError } = await supabase
     .from("ilas_prices")
     .select("nav")
     .eq("fund_id", fund.id)
@@ -118,6 +121,7 @@ async function getClosestNav(
     .order("date", { ascending: false })
     .limit(1)
     .single();
+  if (priceError) console.error("[ilas-tracker] getClosestNav price lookup:", priceError);
 
   return price ? Number(price.nav) : null;
 }
@@ -130,13 +134,14 @@ export async function canSubmitIlasSwitch(
   const supabase = createAdminClient();
 
   // Rule 1: No switch while one is active for this portfolio type
-  const { data: active } = await supabase
+  const { data: active, error: activeError } = await supabase
     .from("ilas_portfolio_orders")
     .select("*")
     .eq("portfolio_type", portfolioType)
     .in("status", ["pending", "awaiting_approval"])
     .limit(1)
     .single();
+  if (activeError) console.error("[ilas-tracker] canSubmitIlasSwitch active orders query:", activeError);
 
   if (active) {
     return {
@@ -147,7 +152,7 @@ export async function canSubmitIlasSwitch(
   }
 
   // Rule 2: 7-day cooldown after last execution
-  const { data: lastExecuted } = await supabase
+  const { data: lastExecuted, error: lastError } = await supabase
     .from("ilas_portfolio_orders")
     .select("settled_at, settlement_date")
     .eq("portfolio_type", portfolioType)
@@ -155,6 +160,7 @@ export async function canSubmitIlasSwitch(
     .order("settled_at", { ascending: false })
     .limit(1)
     .single();
+  if (lastError) console.error("[ilas-tracker] canSubmitIlasSwitch lastExecuted query:", lastError);
 
   if (lastExecuted?.settlement_date) {
     const today = new Date().toISOString().split("T")[0];
@@ -259,16 +265,17 @@ export async function requestEmergencyIlasSwitch(params: {
 
   // Count switches this month for this portfolio type
   const monthStart = new Date().toISOString().slice(0, 7) + "-01";
-  const { data: monthSwitches } = await supabase
+  const { data: monthSwitches, error: monthError } = await supabase
     .from("ilas_portfolio_orders")
     .select("id")
     .eq("portfolio_type", params.portfolioType)
     .in("status", ["pending", "executed"])
     .gte("created_at", monthStart);
+  if (monthError) console.error("[ilas-tracker] requestEmergencyIlasSwitch monthSwitches query:", monthError);
   const monthCount = monthSwitches?.length || 0;
 
   // Get last switch slippage
-  const { data: lastSwitch } = await supabase
+  const { data: lastSwitch, error: lastSwitchError } = await supabase
     .from("ilas_portfolio_orders")
     .select(
       "settlement_date, sell_nav_total, buy_nav_total, old_allocation, new_allocation"
@@ -278,6 +285,7 @@ export async function requestEmergencyIlasSwitch(params: {
     .order("settled_at", { ascending: false })
     .limit(1)
     .single();
+  if (lastSwitchError) console.error("[ilas-tracker] requestEmergencyIlasSwitch lastSwitch query:", lastSwitchError);
 
   const lastSwitchInfo = lastSwitch
     ? `Last switch settled ${lastSwitch.settlement_date}. Slippage: ${lastSwitch.sell_nav_total && lastSwitch.buy_nav_total ? (((lastSwitch.buy_nav_total - lastSwitch.sell_nav_total) / lastSwitch.sell_nav_total) * 100).toFixed(2) + "%" : "N/A"}`
@@ -445,12 +453,13 @@ export async function processIlasSettlements(
   const today = new Date().toISOString().split("T")[0];
 
   // Find orders due for settlement today or earlier for this portfolio type
-  const { data: dueOrders } = await supabase
+  const { data: dueOrders, error: dueError } = await supabase
     .from("ilas_portfolio_orders")
     .select("*")
     .eq("portfolio_type", portfolioType)
     .eq("status", "pending")
     .lte("settlement_date", today);
+  if (dueError) throw new Error(`[ilas-tracker] processIlasSettlements dueOrders query: ${dueError.message}`);
 
   const settled: string[] = [];
   const blocked: string[] = [];
@@ -472,26 +481,28 @@ export async function processIlasSettlements(
     const oldAlloc = order.old_allocation as FundAllocation[];
 
     // Fetch the sell-date NAV row explicitly (not just "latest")
-    const { data: sellDayNav } = await supabase
+    const { data: sellDayNav, error: sellNavError } = await supabase
       .from("ilas_portfolio_nav")
       .select("nav, holdings, is_cash")
       .eq("portfolio_type", portfolioType)
       .eq("date", order.sell_date)
       .single();
+    if (sellNavError) console.error("[ilas-tracker] processIlasSettlements sellDayNav query:", sellNavError);
 
     // Fall back to most recent row before sell date if sell-day row missing
-    const navRow =
-      sellDayNav ||
-      (
-        await supabase
-          .from("ilas_portfolio_nav")
-          .select("nav, holdings, is_cash")
-          .eq("portfolio_type", portfolioType)
-          .lte("date", order.sell_date)
-          .order("date", { ascending: false })
-          .limit(1)
-          .single()
-      ).data;
+    let navRow = sellDayNav;
+    if (!navRow) {
+      const { data: fallbackNav, error: fallbackNavError } = await supabase
+        .from("ilas_portfolio_nav")
+        .select("nav, holdings, is_cash")
+        .eq("portfolio_type", portfolioType)
+        .lte("date", order.sell_date)
+        .order("date", { ascending: false })
+        .limit(1)
+        .single();
+      if (fallbackNavError) console.error("[ilas-tracker] processIlasSettlements fallback NAV query:", fallbackNavError);
+      navRow = fallbackNav;
+    }
 
     if (!navRow) {
       // First settlement ever — use base NAV
@@ -664,12 +675,13 @@ export async function computeAndStoreIlasNav(
   }
 
   // Skip if settle_ilas_switch already wrote an authoritative row for this date
-  const { data: existingRow } = await supabase
+  const { data: existingRow, error: existingError } = await supabase
     .from("ilas_portfolio_nav")
     .select("nav, is_cash, holdings")
     .eq("portfolio_type", portfolioType)
     .eq("date", targetDate)
     .single();
+  if (existingError) console.error("[ilas-tracker] computeAndStoreIlasNav existingRow query:", existingError);
 
   if (
     existingRow &&
@@ -682,13 +694,14 @@ export async function computeAndStoreIlasNav(
   }
 
   // Check if there's a pending order for this portfolio type (we're in cash)
-  const { data: pendingOrder } = await supabase
+  const { data: pendingOrder, error: pendingError } = await supabase
     .from("ilas_portfolio_orders")
     .select("*")
     .eq("portfolio_type", portfolioType)
     .eq("status", "pending")
     .limit(1)
     .single();
+  if (pendingError) console.error("[ilas-tracker] computeAndStoreIlasNav pendingOrder query:", pendingError);
 
   const isCashDay =
     pendingOrder &&
@@ -696,7 +709,7 @@ export async function computeAndStoreIlasNav(
     targetDate < pendingOrder.settlement_date;
 
   // Get previous NAV for this portfolio type
-  const { data: navRow } = await supabase
+  const { data: navRow, error: navError } = await supabase
     .from("ilas_portfolio_nav")
     .select("nav, holdings, is_cash")
     .eq("portfolio_type", portfolioType)
@@ -704,6 +717,7 @@ export async function computeAndStoreIlasNav(
     .order("date", { ascending: false })
     .limit(1)
     .single();
+  if (navError) console.error("[ilas-tracker] computeAndStoreIlasNav navRow query:", navError);
 
   let nav: number;
   let holdings: FundHolding[];
@@ -713,13 +727,15 @@ export async function computeAndStoreIlasNav(
     // Bootstrap: first day ever
     nav = ILAS_BASE_NAV;
     // Get current reference portfolio for this portfolio type
-    const { data: portfolio } = await supabase
+    const { data: portfolio, error: portfolioError } = await supabase
       .from("ilas_reference_portfolio")
       .select("fund_id, weight")
       .eq("portfolio_type", portfolioType);
-    const { data: funds } = await supabase
+    if (portfolioError) console.error("[ilas-tracker] computeAndStoreIlasNav portfolio query:", portfolioError);
+    const { data: funds, error: fundsError } = await supabase
       .from("ilas_funds")
       .select("id, fund_code");
+    if (fundsError) console.error("[ilas-tracker] computeAndStoreIlasNav funds query:", fundsError);
     const fundMap = new Map((funds || []).map((f) => [f.id, f.fund_code]));
 
     holdings = [];

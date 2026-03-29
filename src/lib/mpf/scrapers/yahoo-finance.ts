@@ -32,18 +32,19 @@ export async function fetchYahooFinancePrices(fundCodes?: string[]): Promise<num
     if (!tickers?.length) continue;
 
     // Get fund_id
-    const { data: fund } = await supabase
+    const { data: fund, error: fundError } = await supabase
       .from("mpf_funds")
       .select("id")
       .eq("fund_code", fundCode)
       .single();
+    if (fundError) console.error(`[yahoo] ${fundCode}: fund lookup failed:`, fundError);
     if (!fund) {
       console.log(`[yahoo] ${fundCode}: fund not found in mpf_funds`);
       continue;
     }
 
     // Get latest existing price date to only fetch new data
-    const { data: latestPrice } = await supabase
+    const { data: latestPrice, error: latestError } = await supabase
       .from("mpf_prices")
       .select("date")
       .eq("fund_id", fund.id)
@@ -51,6 +52,7 @@ export async function fetchYahooFinancePrices(fundCodes?: string[]): Promise<num
       .limit(1)
       .single();
 
+    if (latestError) console.error(`[yahoo] ${fundCode}: latest price lookup failed:`, latestError);
     // period1: start from day after latest date, or 2000-01-01 for full backfill
     const startDate = latestPrice
       ? Math.floor(new Date(latestPrice.date).getTime() / 1000) + 86400

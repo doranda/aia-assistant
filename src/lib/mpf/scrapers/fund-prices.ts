@@ -208,9 +208,10 @@ export async function upsertPrices(prices: ScrapedPrice[]): Promise<number> {
   const supabase = createAdminClient();
 
   // Get fund_id map
-  const { data: funds } = await supabase
+  const { data: funds, error: fundsError } = await supabase
     .from("mpf_funds")
     .select("id, fund_code");
+  if (fundsError) console.error("[fund-prices] upsertPrices fund lookup failed:", fundsError);
 
   const fundMap = new Map(funds?.map((f) => [f.fund_code, f.id]) || []);
 
@@ -221,7 +222,7 @@ export async function upsertPrices(prices: ScrapedPrice[]): Promise<number> {
     if (!fund_id) continue;
 
     // Get previous day's NAV for daily_change_pct
-    const { data: prev } = await supabase
+    const { data: prev, error: prevError } = await supabase
       .from("mpf_prices")
       .select("nav")
       .eq("fund_id", fund_id)
@@ -230,6 +231,7 @@ export async function upsertPrices(prices: ScrapedPrice[]): Promise<number> {
       .limit(1)
       .single();
 
+    if (prevError) console.error("[fund-prices] previous NAV lookup failed:", prevError);
     const daily_change_pct = prev?.nav
       ? Number((((price.nav - prev.nav) / prev.nav) * 100).toFixed(4))
       : null;
