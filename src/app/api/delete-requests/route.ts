@@ -124,7 +124,8 @@ export async function PATCH(request: Request) {
         .eq("id", doc.id);
 
       // Delete chunks
-      await supabase.from("chunks").delete().eq("document_id", doc.id);
+      const { error: chunkDeleteErr } = await supabase.from("chunks").delete().eq("document_id", doc.id);
+      if (chunkDeleteErr) console.error("[delete-requests] chunks delete:", chunkDeleteErr);
 
       // Remove from storage
       if (doc.file_path) {

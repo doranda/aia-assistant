@@ -95,16 +95,20 @@ export async function POST(request: Request) {
     }
 
     if (faqConvId) {
-      await supabase.from("messages").insert({ conversation_id: faqConvId, role: "user", content: message });
-      await supabase.from("messages").insert({
+      const { error: faqUserMsgErr } = await supabase.from("messages").insert({ conversation_id: faqConvId, role: "user", content: message });
+      if (faqUserMsgErr) console.error("[chat] FAQ user message insert:", faqUserMsgErr);
+      const { error: faqAsstMsgErr } = await supabase.from("messages").insert({
         conversation_id: faqConvId,
         role: "assistant",
         content: faqMatch.faq.answer,
         sources: faqMatch.faq.sources,
       });
-      await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", faqConvId);
+      if (faqAsstMsgErr) console.error("[chat] FAQ assistant message insert:", faqAsstMsgErr);
+      const { error: faqConvUpdateErr } = await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", faqConvId);
+      if (faqConvUpdateErr) console.error("[chat] FAQ conversation timestamp update:", faqConvUpdateErr);
       // Increment use count
-      await supabase.from("faqs").update({ use_count: faqMatch.faq.use_count + 1 }).eq("id", faqMatch.faq.id);
+      const { error: faqUseCountErr } = await supabase.from("faqs").update({ use_count: faqMatch.faq.use_count + 1 }).eq("id", faqMatch.faq.id);
+      if (faqUseCountErr) console.error("[chat] FAQ use_count update:", faqUseCountErr);
     }
 
     const faqCitations = faqMatch.faq.sources || [];
@@ -175,11 +179,12 @@ export async function POST(request: Request) {
   if (historyError) console.error("[chat] history load failed:", historyError);
 
   // 4. Save user message
-  await supabase.from("messages").insert({
+  const { error: userMsgErr } = await supabase.from("messages").insert({
     conversation_id: convId,
     role: "user",
     content: message,
   });
+  if (userMsgErr) console.error("[chat] user message insert:", userMsgErr);
 
   // 5. Build messages for AI Gateway
   // Embed the document context directly in the user message so the model can't ignore it
@@ -227,16 +232,18 @@ export async function POST(request: Request) {
       async flush() {
         // Save assistant message and update conversation timestamp
         if (fullResponse) {
-          await supabase.from("messages").insert({
+          const { error: asstMsgErr } = await supabase.from("messages").insert({
             conversation_id: convId,
             role: "assistant",
             content: fullResponse,
             sources: citations.length > 0 ? citations : null,
           });
-          await supabase
+          if (asstMsgErr) console.error("[chat] assistant message insert:", asstMsgErr);
+          const { error: convUpdateErr } = await supabase
             .from("conversations")
             .update({ updated_at: new Date().toISOString() })
             .eq("id", convId);
+          if (convUpdateErr) console.error("[chat] conversation timestamp update:", convUpdateErr);
         }
       },
     });

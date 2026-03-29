@@ -363,7 +363,7 @@ export async function upsertFundReturns(data: {
           .maybeSingle();
 
         if (!existing) {
-          await supabase.from("mpf_prices").upsert(
+          const { error: priceUpsertError } = await supabase.from("mpf_prices").upsert(
             {
               fund_id,
               date: as_at_date,
@@ -373,6 +373,7 @@ export async function upsertFundReturns(data: {
             },
             { onConflict: "fund_id,date" }
           );
+          if (priceUpsertError) console.error("[aia-api] price upsert failed:", priceUpsertError);
         }
       }
     }

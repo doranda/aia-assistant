@@ -121,12 +121,13 @@ export async function GET(req: NextRequest) {
     // If outliers found, trigger alert insight (async — don't wait)
     if (outlierFunds && outlierFunds.length > 0) {
       const fundIds = outlierFunds.map((f) => f.fund_id);
-      await supabase.from("mpf_insights").insert({
+      const { error: insightErr } = await supabase.from("mpf_insights").insert({
         type: "alert",
         trigger: `price_outlier: ${outlierFunds.length} fund(s) moved >${PRICE_OUTLIER_THRESHOLD_PCT}%`,
         fund_ids: fundIds,
         status: "pending",
       });
+      if (insightErr) console.error("[cron/prices] Failed to insert price outlier insight:", insightErr);
     }
 
     await processPendingAlerts();

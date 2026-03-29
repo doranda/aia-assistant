@@ -16,7 +16,8 @@ export async function DELETE(
     const { id } = await params;
 
     // Delete messages first (FK constraint), then conversation
-    await supabase.from("messages").delete().eq("conversation_id", id);
+    const { error: msgDeleteErr } = await supabase.from("messages").delete().eq("conversation_id", id);
+    if (msgDeleteErr) console.error("[chat/[id] DELETE] messages delete:", msgDeleteErr);
     const { error } = await supabase
       .from("conversations")
       .delete()

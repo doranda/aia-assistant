@@ -41,12 +41,13 @@ export async function GET(req: NextRequest) {
     const totalSettled = accSettled.settled + disSettled.settled;
     const navCount = (accNav.nav > 0 ? 1 : 0) + (disNav.nav > 0 ? 1 : 0);
 
-    await supabase.from("scraper_runs").insert({
+    const { error: runLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_portfolio_nav",
       status: "success",
       records_processed: totalSettled + navCount,
       duration_ms: Date.now() - t0,
     });
+    if (runLogErr) console.error("[cron/ilas-portfolio-nav] Failed to log success run:", runLogErr);
 
     // Report blocked settlements
     const allBlocked = [...accSettled.blocked, ...disSettled.blocked];
@@ -76,12 +77,13 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("[ilas-portfolio-nav] Cron failed:", error);
 
-    await supabase.from("scraper_runs").insert({
+    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_portfolio_nav",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown",
       duration_ms: Date.now() - t0,
     });
+    if (failLogErr) console.error("[cron/ilas-portfolio-nav] Failed to log error run:", failLogErr);
 
     await sendDiscordAlert({
       title: "ILAS Portfolio NAV Cron Failed",

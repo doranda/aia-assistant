@@ -230,7 +230,7 @@ export async function submitIlasSwitch(params: {
   // Insert sell transaction legs (units filled later when T+1 NAV available)
   for (const fund of params.oldAllocation) {
     if (fund.weight <= 0) continue;
-    await supabase.from("ilas_portfolio_transactions").insert({
+    const { error: txnError } = await supabase.from("ilas_portfolio_transactions").insert({
       order_id: orderRow.id,
       side: "sell",
       fund_code: fund.code,
@@ -238,6 +238,7 @@ export async function submitIlasSwitch(params: {
       units: null, // filled on sell date when NAV available
       nav_at_execution: null,
     });
+    if (txnError) throw new Error(`[ilas-tracker] transaction insert failed: ${txnError.message}`);
   }
 
   return {
@@ -397,7 +398,7 @@ export async function approveIlasSwitch(
   const oldAlloc = order.old_allocation as FundAllocation[];
   for (const fund of oldAlloc) {
     if (fund.weight <= 0) continue;
-    await supabase.from("ilas_portfolio_transactions").insert({
+    const { error: sellTxnError } = await supabase.from("ilas_portfolio_transactions").insert({
       order_id: orderId,
       side: "sell",
       fund_code: fund.code,
@@ -405,6 +406,7 @@ export async function approveIlasSwitch(
       units: null,
       nav_at_execution: null,
     });
+    if (sellTxnError) throw new Error(`[ilas-tracker] sell transaction insert failed: ${sellTxnError.message}`);
   }
 
   await sendDiscordAlert({
@@ -792,7 +794,7 @@ export async function computeAndStoreIlasNav(
   }
 
   // Upsert with portfolio_type in the conflict
-  await supabase.from("ilas_portfolio_nav").upsert(
+  const { error: navUpsertError } = await supabase.from("ilas_portfolio_nav").upsert(
     {
       portfolio_type: portfolioType,
       date: targetDate,
@@ -804,6 +806,7 @@ export async function computeAndStoreIlasNav(
     },
     { onConflict: "portfolio_type,date" }
   );
+  if (navUpsertError) console.error("[ilas-tracker] NAV upsert failed:", navUpsertError);
 
   return { nav, isCash: isCashDay || false };
 }

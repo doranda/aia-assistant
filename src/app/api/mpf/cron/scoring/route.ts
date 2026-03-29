@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
       });
 
       if (scoreResult) {
-        await supabase.from("mpf_rebalance_scores").insert({
+        const { error: scoreInsertErr } = await supabase.from("mpf_rebalance_scores").insert({
           insight_id: item.type === "live" ? item.id : null,
           backtest_result_id: item.type === "backtest" ? item.id : null,
           score_period: period,
@@ -158,6 +158,7 @@ export async function GET(req: NextRequest) {
           actual_return_pct: portfolioReturn,
           baseline_return_pct: baselineReturn,
         });
+        if (scoreInsertErr) console.error("[cron/scoring] Failed to insert rebalance score:", scoreInsertErr);
         scored++;
       }
     }

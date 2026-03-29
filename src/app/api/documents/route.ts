@@ -193,7 +193,8 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: `Delete failed: ${error.message}` }, { status: 500 });
   }
 
-  await supabase.from("chunks").delete().eq("document_id", id);
+  const { error: chunkDeleteErr } = await supabase.from("chunks").delete().eq("document_id", id);
+  if (chunkDeleteErr) console.error("[documents] chunks delete:", chunkDeleteErr);
 
   if (doc?.file_path) {
     await supabase.storage.from("documents").remove([doc.file_path]);

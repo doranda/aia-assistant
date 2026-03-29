@@ -33,12 +33,13 @@ export async function GET(req: NextRequest) {
     const disResult = await evaluateAndRebalanceIlas("distribution", highImpactCount);
 
     // Log scraper run
-    await supabase.from("scraper_runs").insert({
+    const { error: runLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_weekly_debate",
       status: "success",
       records_processed: (accResult.rebalanced ? 1 : 0) + (disResult.rebalanced ? 1 : 0),
       duration_ms: Date.now() - startTime,
     });
+    if (runLogErr) console.error("[cron/ilas-weekly] Failed to log success run:", runLogErr);
 
     return NextResponse.json({
       ok: true,
@@ -48,12 +49,13 @@ export async function GET(req: NextRequest) {
       ms: Date.now() - startTime,
     });
   } catch (error) {
-    await supabase.from("scraper_runs").insert({
+    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_weekly_debate",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
       duration_ms: Date.now() - startTime,
     });
+    if (failLogErr) console.error("[cron/ilas-weekly] Failed to log error run:", failLogErr);
 
     await sendDiscordAlert({
       title: "ILAS Track -- Weekly Debate Failed",

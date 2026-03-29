@@ -54,7 +54,8 @@ export async function GET(req: NextRequest) {
         const m = (d.choices?.[0]?.message?.content || "").match(/\{[\s\S]*?\}/);
         if (m) {
           const p = JSON.parse(m[0]);
-          await supabase.from("mpf_news").update({ sentiment: p.sentiment||"neutral", category: p.category||"markets", region: p.region||"global", impact_tags: p.impact_tags||[], is_high_impact: !!p.is_high_impact }).eq("id", a.id);
+          const { error: classifyErr } = await supabase.from("mpf_news").update({ sentiment: p.sentiment||"neutral", category: p.category||"markets", region: p.region||"global", impact_tags: p.impact_tags||[], is_high_impact: !!p.is_high_impact }).eq("id", a.id);
+          if (classifyErr) console.error("[cron/news] Failed to update classification for article:", classifyErr);
           classified++; if (p.is_high_impact) highImpact++;
         }
       } catch { /* skip single article */ }
@@ -108,10 +109,11 @@ export async function GET(req: NextRequest) {
     rebResult = "skipped — no high-impact news";
   }
 
-  await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: fetched + classified, duration_ms: Date.now() - t0 });
+  const { error: runLogErr } = await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: fetched + classified, duration_ms: Date.now() - t0 });
+  if (runLogErr) console.error("[cron/news] Failed to log success run:", runLogErr);
   return NextResponse.json({ ok: true, fetched, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
   } catch (error) {
-    await supabase
+    const { error: failLogErr } = await supabase
       .from("scraper_runs")
       .insert({
         scraper_name: "news_pipeline",
@@ -119,6 +121,7 @@ export async function GET(req: NextRequest) {
         error_message: error instanceof Error ? error.message : "Unknown error",
         duration_ms: Date.now() - t0,
       });
+    if (failLogErr) console.error("[cron/news] Failed to log error run:", failLogErr);
 
     const failures = await getConsecutiveFailures(supabase, "news_pipeline");
     const isEscalated = failures >= 2;

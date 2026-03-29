@@ -54,12 +54,13 @@ export async function GET(req: NextRequest) {
     }
 
     // Step 5: Log heartbeat
-    await supabase.from("scraper_runs").insert({
+    const { error: runLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "portfolio_nav",
       status: "success",
       records_processed: settled + (nav > 0 ? 1 : 0),
       duration_ms: Date.now() - t0,
     });
+    if (runLogErr) console.error("[cron/portfolio-nav] Failed to log success run:", runLogErr);
 
     // Step 6: Report blocked settlements
     if (blocked.length > 0) {
@@ -80,12 +81,13 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("[portfolio-nav] Cron failed:", error);
 
-    await supabase.from("scraper_runs").insert({
+    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "portfolio_nav",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown",
       duration_ms: Date.now() - t0,
     });
+    if (failLogErr) console.error("[cron/portfolio-nav] Failed to log error run:", failLogErr);
 
     await sendDiscordAlert({
       title: "❌ MPF Care — Portfolio NAV Cron Failed",

@@ -111,11 +111,12 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     const supabase = createAdminClient();
-    await supabase.from("scraper_runs").insert({
+    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_metrics",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
     });
+    if (failLogErr) console.error("[cron/ilas-metrics] Failed to log error run:", failLogErr);
     await sendDiscordAlert({
       title: "❌ ILAS Track — Metrics Computation Failed",
       description: `**Error:** ${sanitizeError(error)}`,

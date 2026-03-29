@@ -31,12 +31,13 @@ export async function GET(req: Request) {
     if (prices.length === 0) {
       // Log failed scraper run
       const supabase = createAdminClient();
-      await supabase.from("scraper_runs").insert({
+      const { error: emptyLogErr } = await supabase.from("scraper_runs").insert({
         scraper_name: "ilas_prices",
         status: "error",
         records_processed: 0,
         error_message: scrapeErrors.join("; ") || "No prices scraped",
       });
+      if (emptyLogErr) console.error("[cron/ilas-prices] Failed to log empty scrape run:", emptyLogErr);
 
       return NextResponse.json(
         {
@@ -60,12 +61,13 @@ export async function GET(req: Request) {
 
     // Log scraper run
     const supabase = createAdminClient();
-    await supabase.from("scraper_runs").insert({
+    const { error: successLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_prices",
       status: allErrors.length === 0 ? "success" : "partial",
       records_processed: inserted,
       error_message: allErrors.length > 0 ? allErrors.join("; ") : null,
     });
+    if (successLogErr) console.error("[cron/ilas-prices] Failed to log success run:", successLogErr);
 
     return NextResponse.json({
       ok: allErrors.length === 0,
@@ -76,11 +78,12 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     const supabase = createAdminClient();
-    await supabase.from("scraper_runs").insert({
+    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_prices",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
     });
+    if (failLogErr) console.error("[cron/ilas-prices] Failed to log GET error run:", failLogErr);
     await sendDiscordAlert({
       title: "❌ ILAS Track — Price Scrape Failed",
       description: `**Error:** ${sanitizeError(error)}`,
@@ -122,12 +125,13 @@ export async function POST(req: Request) {
 
     // Log scraper run
     const supabase = createAdminClient();
-    await supabase.from("scraper_runs").insert({
+    const { error: postLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_prices",
       status: errors === 0 ? "success" : "partial",
       records_processed: inserted,
       error_message: errors > 0 ? `${errors} upsert errors` : null,
     });
+    if (postLogErr) console.error("[cron/ilas-prices] Failed to log POST success run:", postLogErr);
 
     return NextResponse.json({
       ok: errors === 0,
@@ -138,11 +142,12 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const supabase = createAdminClient();
-    await supabase.from("scraper_runs").insert({
+    const { error: postFailLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_prices",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
     });
+    if (postFailLogErr) console.error("[cron/ilas-prices] Failed to log POST error run:", postFailLogErr);
     await sendDiscordAlert({
       title: "❌ ILAS Track — Price POST Failed",
       description: `**Error:** ${sanitizeError(error)}`,

@@ -63,12 +63,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    await supabase.from("scraper_runs").insert({
+    const { error: runLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "fund_metrics",
       status: "success",
       records_processed: totalUpserted,
       duration_ms: Date.now() - startTime,
     });
+    if (runLogErr) console.error("[cron/metrics] Failed to log success run:", runLogErr);
 
     return NextResponse.json({
       ok: true,
@@ -77,12 +78,13 @@ export async function GET(req: NextRequest) {
       ms: Date.now() - startTime,
     });
   } catch (error) {
-    await supabase.from("scraper_runs").insert({
+    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "fund_metrics",
       status: "failed",
       error_message: error instanceof Error ? error.message : "Unknown error",
       duration_ms: Date.now() - startTime,
     });
+    if (failLogErr) console.error("[cron/metrics] Failed to log error run:", failLogErr);
 
     await sendDiscordAlert({
       title: "❌ MPF Care — Metrics Computation Failed",

@@ -238,7 +238,7 @@ export async function submitSwitch(params: {
   // Insert sell transaction legs (units filled later when T+1 NAV available)
   for (const fund of params.oldAllocation) {
     if (fund.weight <= 0) continue;
-    await supabase.from("mpf_portfolio_transactions").insert({
+    const { error: txnError } = await supabase.from("mpf_portfolio_transactions").insert({
       switch_id: switchRow.id,
       side: "sell",
       fund_code: fund.code,
@@ -246,6 +246,7 @@ export async function submitSwitch(params: {
       units: null, // filled on sell date when NAV available
       nav_at_execution: null,
     });
+    if (txnError) throw new Error(`[mpf-tracker] transaction insert failed: ${txnError.message}`);
   }
 
   return {
@@ -387,7 +388,7 @@ export async function approveSwitch(
   const oldAlloc = sw.old_allocation as FundAllocation[];
   for (const fund of oldAlloc) {
     if (fund.weight <= 0) continue;
-    await supabase.from("mpf_portfolio_transactions").insert({
+    const { error: sellTxnError } = await supabase.from("mpf_portfolio_transactions").insert({
       switch_id: switchId,
       side: "sell",
       fund_code: fund.code,
@@ -395,6 +396,7 @@ export async function approveSwitch(
       units: null,
       nav_at_execution: null,
     });
+    if (sellTxnError) throw new Error(`[mpf-tracker] sell transaction insert failed: ${sellTxnError.message}`);
   }
 
   await sendDiscordAlert({
@@ -800,7 +802,7 @@ export async function computeAndStoreNav(
   }
 
   // Upsert
-  await supabase.from("mpf_portfolio_nav").upsert(
+  const { error: navUpsertError } = await supabase.from("mpf_portfolio_nav").upsert(
     {
       date: targetDate,
       nav,
@@ -811,6 +813,7 @@ export async function computeAndStoreNav(
     },
     { onConflict: "date" }
   );
+  if (navUpsertError) console.error("[mpf-tracker] NAV upsert failed:", navUpsertError);
 
   return { nav, isCash: isCashDay || false };
 }
