@@ -39,16 +39,17 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
           setSuggestions(data.slice(0, 4).map((q: { query_text: string }) => q.query_text));
         }
       })
-      .catch(() => {});
+      .catch((e) => console.error("[chat] popular queries fetch:", e));
   }, []);
 
   const loadMessages = useCallback(async (convId: string) => {
     const supabase = createClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("messages")
       .select("*")
       .eq("conversation_id", convId)
       .order("created_at", { ascending: true });
+    if (error) console.error("[chat] loadMessages:", error);
     setMessages((data || []) as Message[]);
   }, []);
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractKeywords } from "@/lib/search";
+import { canManageTeam } from "@/lib/permissions";
+import type { UserRole } from "@/lib/types";
 
 export async function GET() {
   try {
@@ -26,6 +28,16 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!canManageTeam((profile?.role || "agent") as UserRole)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     let body: Record<string, unknown>;
     try {

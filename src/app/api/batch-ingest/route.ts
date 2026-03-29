@@ -4,6 +4,7 @@ import { ingestDocument } from "@/lib/ingestion";
 import { parseFilename } from "@/lib/parse-filename";
 import { readdir, readFile, rename, mkdir } from "fs/promises";
 import { join } from "path";
+import type { UserRole } from "@/lib/types";
 
 const INGEST_DIR = join(process.cwd(), "docs/pdfs-to-upload");
 const DONE_DIR = join(process.cwd(), "docs/pdfs-uploaded");
@@ -12,12 +13,23 @@ export async function POST(request: Request) {
   // Protect with a secret (use CRON_SECRET or a simple shared key)
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET || process.env.BATCH_INGEST_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    // If no secret configured, allow any authenticated user
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    // No valid cron secret — require authenticated admin user
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    const role = (profile?.role || "agent") as UserRole;
+    if (role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
 

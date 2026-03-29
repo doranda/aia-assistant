@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { canManageTeam } from "@/lib/permissions";
+import type { UserRole } from "@/lib/types";
 
 export async function DELETE(
   _request: Request,
@@ -9,6 +11,16 @@ export async function DELETE(
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!canManageTeam((profile?.role || "agent") as UserRole)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { id } = await params;
     const { error } = await supabase.from("faqs").delete().eq("id", id);
@@ -29,6 +41,16 @@ export async function PATCH(
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!canManageTeam((profile?.role || "agent") as UserRole)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const { id } = await params;
     let body: Record<string, unknown>;

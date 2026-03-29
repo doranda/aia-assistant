@@ -96,10 +96,11 @@ export async function fetchNews(): Promise<number> {
     const existingHeadlines = new Set<string>();
     if (!dedupLoaded) {
       const twoDaysAgo = new Date(Date.now() - 48 * 3600_000).toISOString();
-      const { data: existing } = await supabase
+      const { data: existing, error: dedupError } = await supabase
         .from("mpf_news")
         .select("headline")
         .gte("published_at", twoDaysAgo);
+      if (dedupError) console.error("[news-collector] dedup query failed:", dedupError.message);
       for (const e of existing || []) existingHeadlines.add(e.headline);
       dedupLoaded = true;
       dedupSet = existingHeadlines;
@@ -128,7 +129,9 @@ export async function fetchNews(): Promise<number> {
         is_high_impact: false,
       });
 
-      if (!error) {
+      if (error) {
+        console.error("[news-collector] insert failed:", error.message);
+      } else {
         totalInserted++;
         dedupSet.add(title); // prevent inserting same headline from different queries
       }

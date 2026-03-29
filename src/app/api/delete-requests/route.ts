@@ -118,10 +118,15 @@ export async function PATCH(request: Request) {
       };
 
       // Soft delete
-      await supabase
+      const { error: softDeleteError } = await supabase
         .from("documents")
         .update({ is_deleted: true })
         .eq("id", doc.id);
+
+      if (softDeleteError) {
+        console.error("[delete-requests] soft-delete error:", softDeleteError);
+        return NextResponse.json({ error: `Soft delete failed: ${softDeleteError.message}` }, { status: 500 });
+      }
 
       // Delete chunks
       const { error: chunkDeleteErr } = await supabase.from("chunks").delete().eq("document_id", doc.id);

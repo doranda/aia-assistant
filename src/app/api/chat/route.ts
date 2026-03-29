@@ -68,14 +68,16 @@ export async function POST(request: Request) {
   if (queryError && queryError.code !== "PGRST116") console.error("[chat] popular_queries lookup:", queryError);
 
   if (existingQuery) {
-    await supabase
+    const { error: updateError } = await supabase
       .from("popular_queries")
       .update({ count: existingQuery.count + 1, last_asked_at: new Date().toISOString(), last_asked_by: user.id })
       .eq("id", existingQuery.id);
+    if (updateError) console.error("[chat] popular_queries update:", updateError);
   } else {
-    await supabase
+    const { error: insertError } = await supabase
       .from("popular_queries")
       .insert({ query_text: message.trim(), query_hash: queryHash, last_asked_by: user.id });
+    if (insertError) console.error("[chat] popular_queries insert:", insertError);
   }
 
   // 0. Check FAQs first — instant response if matched

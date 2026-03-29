@@ -3,46 +3,51 @@ import { createClient } from "@/lib/supabase/server";
 import { ingestDocument } from "@/lib/ingestion";
 
 export async function PATCH(request: Request) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  let body: Record<string, unknown>;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const { id, title, category, company, tags } = body as { id: string; title: string; category: string; company: string; tags: string[] };
+
+    if (!id) {
+      return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (title !== undefined) updates.title = title;
+    if (category !== undefined) updates.category = category;
+    if (company !== undefined) updates.company = company || null;
+    if (tags !== undefined) updates.tags = tags;
+
+    const { data: doc, error } = await supabase
+      .from("documents")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: `Update failed: ${error.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json(doc);
+  } catch (err) {
+    console.error("[documents] PATCH error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-  const { id, title, category, company, tags } = body as { id: string; title: string; category: string; company: string; tags: string[] };
-
-  if (!id) {
-    return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
-  }
-
-  const updates: Record<string, unknown> = {};
-  if (title !== undefined) updates.title = title;
-  if (category !== undefined) updates.category = category;
-  if (company !== undefined) updates.company = company || null;
-  if (tags !== undefined) updates.tags = tags;
-
-  const { data: doc, error } = await supabase
-    .from("documents")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: `Update failed: ${error.message}` }, { status: 500 });
-  }
-
-  return NextResponse.json(doc);
 }
 
 export async function POST(request: Request) {
@@ -128,77 +133,87 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  let deleteBody: Record<string, unknown>;
   try {
-    deleteBody = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-  const { id, reason } = deleteBody as { id: string; reason: string };
+    const supabase = await createClient();
 
-  if (!id) {
-    return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
-  }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  // Check user role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const role = profile?.role as import("@/lib/types").UserRole;
-
-  // Agents/members create a delete request instead of deleting directly
-  if (role === "agent" || role === "member") {
-    const { error: reqError } = await supabase.from("delete_requests").insert({
-      document_id: id,
-      requested_by: user.id,
-      reason: reason || null,
-    });
-
-    if (reqError) {
-      return NextResponse.json(
-        { error: `Request failed: ${reqError.message}` },
-        { status: 500 }
-      );
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    return NextResponse.json({ success: true, requested: true });
+    let deleteBody: Record<string, unknown>;
+    try {
+      deleteBody = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    const { id, reason } = deleteBody as { id: string; reason: string };
+
+    if (!id) {
+      return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
+    }
+
+    // Check user role
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError) {
+      console.error("[documents] DELETE profile query error:", profileError);
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
+
+    const role = profile?.role as import("@/lib/types").UserRole;
+
+    // Agents/members create a delete request instead of deleting directly
+    if (role === "agent" || role === "member") {
+      const { error: reqError } = await supabase.from("delete_requests").insert({
+        document_id: id,
+        requested_by: user.id,
+        reason: reason || null,
+      });
+
+      if (reqError) {
+        return NextResponse.json(
+          { error: `Request failed: ${reqError.message}` },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ success: true, requested: true });
+    }
+
+    // Admin/manager: delete directly
+    const { data: doc } = await supabase
+      .from("documents")
+      .select("file_path")
+      .eq("id", id)
+      .single();
+
+    const { error } = await supabase
+      .from("documents")
+      .update({ is_deleted: true })
+      .eq("id", id);
+
+    if (error) {
+      return NextResponse.json({ error: `Delete failed: ${error.message}` }, { status: 500 });
+    }
+
+    const { error: chunkDeleteErr } = await supabase.from("chunks").delete().eq("document_id", id);
+    if (chunkDeleteErr) console.error("[documents] chunks delete:", chunkDeleteErr);
+
+    if (doc?.file_path) {
+      await supabase.storage.from("documents").remove([doc.file_path]);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("[documents] DELETE error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-
-  // Admin/manager: delete directly
-  const { data: doc } = await supabase
-    .from("documents")
-    .select("file_path")
-    .eq("id", id)
-    .single();
-
-  const { error } = await supabase
-    .from("documents")
-    .update({ is_deleted: true })
-    .eq("id", id);
-
-  if (error) {
-    return NextResponse.json({ error: `Delete failed: ${error.message}` }, { status: 500 });
-  }
-
-  const { error: chunkDeleteErr } = await supabase.from("chunks").delete().eq("document_id", id);
-  if (chunkDeleteErr) console.error("[documents] chunks delete:", chunkDeleteErr);
-
-  if (doc?.file_path) {
-    await supabase.storage.from("documents").remove([doc.file_path]);
-  }
-
-  return NextResponse.json({ success: true });
 }

@@ -94,12 +94,13 @@ Only include relevant impact_tags (usually 1-3).`;
 export async function classifyUnclassifiedNews(): Promise<{ classified: number; highImpactCount: number }> {
   const supabase = createAdminClient();
 
-  const { data: unclassified } = await supabase
+  const { data: unclassified, error: fetchError } = await supabase
     .from("mpf_news")
     .select("id, headline, summary")
     .eq("impact_tags", "{}")
     .order("published_at", { ascending: false })
     .limit(5);
+  if (fetchError) console.error("[classification] failed to fetch unclassified news:", fetchError.message);
 
   if (!unclassified?.length) return { classified: 0, highImpactCount: 0 };
 

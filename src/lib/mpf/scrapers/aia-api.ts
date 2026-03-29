@@ -242,7 +242,7 @@ export async function upsertDailyPrices(data: {
     if (!fund_id) continue;
 
     // Get previous price for daily_change_pct
-    const { data: prev } = await supabase
+    const { data: prev, error: prevError } = await supabase
       .from("mpf_prices")
       .select("nav")
       .eq("fund_id", fund_id)
@@ -250,6 +250,7 @@ export async function upsertDailyPrices(data: {
       .order("date", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (prevError) console.error(`[aia-api] prev price query failed for fund ${fund_id}:`, prevError.message);
 
     const dailyChange = prev?.nav
       ? Math.round(((price.nav - prev.nav) / prev.nav) * 10000) / 100
@@ -341,7 +342,7 @@ export async function upsertFundReturns(data: {
     // real NAV data).  We skip if return_1m is null since we can't derive a NAV.
     if (fund.returns["1m"] !== null) {
       // Get the most recent existing price to derive a pseudo-NAV
-      const { data: latestPrice } = await supabase
+      const { data: latestPrice, error: latestPriceError } = await supabase
         .from("mpf_prices")
         .select("nav, date")
         .eq("fund_id", fund_id)
@@ -349,18 +350,20 @@ export async function upsertFundReturns(data: {
         .order("date", { ascending: false })
         .limit(1)
         .single();
+      if (latestPriceError) console.error(`[aia-api] latest price query failed for fund ${fund_id}:`, latestPriceError.message);
 
       if (latestPrice?.nav) {
         const syntheticNav = Number(
           (latestPrice.nav * (1 + fund.returns["1m"] / 100)).toFixed(4)
         );
         // Only insert if no record already exists for this date
-        const { data: existing } = await supabase
+        const { data: existing, error: existingError } = await supabase
           .from("mpf_prices")
           .select("id")
           .eq("fund_id", fund_id)
           .eq("date", as_at_date)
           .maybeSingle();
+        if (existingError) console.error(`[aia-api] existing price check failed for fund ${fund_id}:`, existingError.message);
 
         if (!existing) {
           const { error: priceUpsertError } = await supabase.from("mpf_prices").upsert(

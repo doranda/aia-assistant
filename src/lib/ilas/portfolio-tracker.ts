@@ -383,7 +383,7 @@ export async function approveIlasSwitch(
     holidays
   );
 
-  await supabase
+  const { error: approveError } = await supabase
     .from("ilas_portfolio_orders")
     .update({
       status: "pending",
@@ -393,6 +393,7 @@ export async function approveIlasSwitch(
       confirmation_token: null, // one-time use
     })
     .eq("id", orderId);
+  if (approveError) throw new Error(`[ilas-tracker] approveIlasSwitch update failed: ${approveError.message}`);
 
   // Insert sell legs
   const oldAlloc = order.old_allocation as FundAllocation[];
@@ -588,10 +589,11 @@ export async function processIlasSettlements(
       : 0;
 
     // Store sell_nav_total (cash proceeds from sell) for slippage tracking
-    await supabase
+    const { error: sellNavTotalError } = await supabase
       .from("ilas_portfolio_orders")
       .update({ sell_nav_total: cashBalance })
       .eq("id", order.id);
+    if (sellNavTotalError) console.error(`[ilas-portfolio-tracker] sell_nav_total update failed for ${order.id}:`, sellNavTotalError.message);
 
     // Atomic settlement via Postgres function
     const { error: settleErr } = await supabase.rpc("settle_ilas_switch", {
@@ -627,12 +629,13 @@ export async function processIlasSettlements(
           (await getExactNav(h.code, order.sell_date)) ||
           (await getClosestNav(h.code, order.sell_date));
         if (sellNav) {
-          await supabase
+          const { error: sellTxnUpdateError } = await supabase
             .from("ilas_portfolio_transactions")
             .update({ units: h.units, nav_at_execution: sellNav })
             .eq("order_id", order.id)
             .eq("side", "sell")
             .eq("fund_code", h.code);
+          if (sellTxnUpdateError) console.error(`[ilas-portfolio-tracker] sell txn update failed for ${order.id}/${h.code}:`, sellTxnUpdateError.message);
         }
       }
     }

@@ -373,7 +373,7 @@ export async function approveSwitch(
   const sellDate = addWorkingDays(effectiveDate, 1, holidays);
   const settlementDate = addWorkingDays(effectiveDate, SETTLEMENT_DAYS, holidays);
 
-  await supabase
+  const { error: approveError } = await supabase
     .from("mpf_pending_switches")
     .update({
       status: "pending",
@@ -383,6 +383,7 @@ export async function approveSwitch(
       confirmation_token: null, // one-time use
     })
     .eq("id", switchId);
+  if (approveError) throw new Error(`[mpf-tracker] approveSwitch update failed: ${approveError.message}`);
 
   // Insert sell legs
   const oldAlloc = sw.old_allocation as FundAllocation[];
@@ -617,10 +618,11 @@ export async function processSettlements(): Promise<{
       navRow ? ((navValue - Number(navRow.nav)) / Number(navRow.nav)) * 100 : 0;
 
     // Store sell_nav_total (cash proceeds from sell) for slippage tracking
-    await supabase
+    const { error: sellNavTotalError } = await supabase
       .from("mpf_pending_switches")
       .update({ sell_nav_total: cashBalance })
       .eq("id", sw.id);
+    if (sellNavTotalError) console.error(`[portfolio-tracker] sell_nav_total update failed for ${sw.id}:`, sellNavTotalError.message);
 
     // Atomic settlement via Postgres function
     const { error: settleErr } = await supabase.rpc("settle_switch", {
@@ -648,12 +650,13 @@ export async function processSettlements(): Promise<{
       for (const h of sellHoldings) {
         const sellNav = await getExactNav(h.code, sw.sell_date) || await getClosestNav(h.code, sw.sell_date);
         if (sellNav) {
-          await supabase
+          const { error: sellTxnUpdateError } = await supabase
             .from("mpf_portfolio_transactions")
             .update({ units: h.units, nav_at_execution: sellNav })
             .eq("switch_id", sw.id)
             .eq("side", "sell")
             .eq("fund_code", h.code);
+          if (sellTxnUpdateError) console.error(`[portfolio-tracker] sell txn update failed for ${sw.id}/${h.code}:`, sellTxnUpdateError.message);
         }
       }
     }

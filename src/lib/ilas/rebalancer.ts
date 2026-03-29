@@ -293,7 +293,6 @@ export async function evaluateAndRebalanceIlas(
   if (fundsError) console.error(`${logPrefix} Failed to fetch funds:`, fundsError);
 
   const fundMap = new Map((funds || []).map(f => [f.id, f]));
-  const fundCodeToId = new Map((funds || []).map(f => [f.fund_code, f.id]));
 
   const currentHoldings = portfolio.map(p => {
     const fund = fundMap.get(p.fund_id);
