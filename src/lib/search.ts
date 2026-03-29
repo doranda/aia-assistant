@@ -93,7 +93,9 @@ export async function searchDocuments(
   const matchCount = options?.matchCount || 10;
 
   // Strategy: search by content keywords + title-matched document chunks, merge results
-  const contentConditions = keywords.map((kw) => `content.ilike.%${kw}%`).join(",");
+  // Escape PostgREST wildcards in user keywords to prevent filter injection
+  const escapeWildcards = (s: string) => s.replace(/%/g, "\\%").replace(/_/g, "\\_");
+  const contentConditions = keywords.map((kw) => `content.ilike.%${escapeWildcards(kw)}%`).join(",");
 
   const chunkSelect = `
     id,
@@ -121,7 +123,7 @@ export async function searchDocuments(
     .limit(fetchLimit);
 
   // 2. Also search by document title match (finds docs even when content is in another language)
-  const titleConditions = keywords.map((kw) => `title.ilike.%${kw}%`).join(",");
+  const titleConditions = keywords.map((kw) => `title.ilike.%${escapeWildcards(kw)}%`).join(",");
   const { data: titleDocs, error: titleDocsError } = await supabase
     .from("documents")
     .select("id")

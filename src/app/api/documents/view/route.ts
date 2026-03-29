@@ -21,6 +21,18 @@ export async function GET(request: Request) {
 
   try {
     const admin = createAdminClient();
+
+    // Verify the file_path belongs to a non-deleted document (prevents path traversal)
+    const { data: doc, error: docError } = await admin
+      .from("documents")
+      .select("id")
+      .eq("file_path", filePath)
+      .eq("is_deleted", false)
+      .single();
+    if (docError || !doc) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+
     const { data, error } = await admin.storage
       .from("documents")
       .createSignedUrl(filePath, 300); // 5-minute expiry

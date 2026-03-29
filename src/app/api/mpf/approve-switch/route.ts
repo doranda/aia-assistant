@@ -11,11 +11,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Check admin role
-  const { data: profile } = await supabase
-    .from("team_members")
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
     .select("role")
-    .eq("user_id", user.id)
+    .eq("id", user.id)
     .single();
+  if (profileError) console.error("[approve-switch] profile query failed:", profileError);
 
   if (profile?.role !== "admin") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
