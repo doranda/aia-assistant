@@ -1,4 +1,5 @@
 import { streamText } from "ai";
+import { gateway } from "@ai-sdk/gateway";
 
 const CHAT_MODEL = process.env.CHAT_MODEL || "deepseek/deepseek-chat";
 
@@ -15,7 +16,7 @@ export async function aiChatStream(
   messages: ChatMessage[]
 ): Promise<ReadableStream<Uint8Array>> {
   const result = streamText({
-    model: CHAT_MODEL as `${string}/${string}`,
+    model: gateway(CHAT_MODEL),
     messages,
   });
 
@@ -25,15 +26,21 @@ export async function aiChatStream(
 
   return new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read();
-      if (done) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ content: value })}\n\n`)
+        );
+      } catch (err) {
+        console.error("[ai-chat] Stream error:", err);
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
-        return;
       }
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ content: value })}\n\n`)
-      );
     },
   });
 }
