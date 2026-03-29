@@ -10,6 +10,7 @@ export interface SearchResult {
   rank: number;
   doc_title: string;
   doc_category: string;
+  doc_file_path: string;
 }
 
 const STOPWORDS = new Set([
@@ -103,19 +104,21 @@ export async function searchDocuments(
     documents!inner (
       title,
       category,
+      file_path,
       is_deleted,
       status
     )
   `;
 
-  // 1. Content keyword search
+  // 1. Content keyword search — fetch more candidates for better scoring
+  const fetchLimit = Math.max(matchCount * 4, 20);
   let query_builder = supabase
     .from("chunks")
     .select(chunkSelect)
     .eq("documents.is_deleted", false)
     .eq("documents.status", "indexed")
     .or(contentConditions)
-    .limit(matchCount);
+    .limit(fetchLimit);
 
   // 2. Also search by document title match (finds docs even when content is in another language)
   const titleConditions = keywords.map((kw) => `title.ilike.%${kw}%`).join(",");
@@ -137,7 +140,7 @@ export async function searchDocuments(
       .eq("documents.is_deleted", false)
       .eq("documents.status", "indexed")
       .in("document_id", titleDocIds)
-      .limit(matchCount);
+      .limit(fetchLimit);
     if (tChunksError) console.error("[search] Failed to fetch title-matched chunks:", tChunksError);
     titleChunks = tChunks || [];
   }
@@ -177,6 +180,7 @@ export async function searchDocuments(
     const doc = chunk.documents as unknown as {
       title: string;
       category: string;
+      file_path: string;
     };
     const titleLower = doc.title.toLowerCase();
     let matchCount = 0;
@@ -215,6 +219,7 @@ export async function searchDocuments(
       rank: Math.max((matchCount + exactBonus) / keywords.length, titleBonus),
       doc_title: doc.title,
       doc_category: doc.category,
+      doc_file_path: doc.file_path,
     } as SearchResult;
   });
 
@@ -251,6 +256,7 @@ export function extractCitations(
   document_title: string;
   page_number: number;
   relevance_score: number;
+  file_path: string;
 }[] {
   const seen = new Set<string>();
   return results
@@ -266,5 +272,6 @@ export function extractCitations(
       document_title: r.doc_title,
       page_number: r.page_number,
       relevance_score: r.rank,
+      file_path: r.doc_file_path,
     }));
 }

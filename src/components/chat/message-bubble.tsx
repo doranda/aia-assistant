@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MessageSource } from "@/lib/types";
+import { ExternalLink, Loader2 } from "lucide-react";
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
@@ -18,6 +19,23 @@ interface MessageBubbleProps {
 export function MessageBubble({ role, content, sources, isStreaming, isFAQ, userQuestion, onSaveAsFAQ }: MessageBubbleProps) {
   const [saved, setSaved] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const [loadingSource, setLoadingSource] = useState<string | null>(null);
+
+  const handleSourceClick = useCallback(async (source: MessageSource) => {
+    if (!source.file_path) return;
+    const key = `${source.document_id}-${source.page_number}`;
+    setLoadingSource(key);
+    try {
+      const res = await fetch(`/api/documents/view?path=${encodeURIComponent(source.file_path)}`);
+      if (!res.ok) return;
+      const { url } = await res.json();
+      if (url) window.open(url, "_blank", "noopener");
+    } catch {
+      // silent — button just stops loading
+    } finally {
+      setLoadingSource(null);
+    }
+  }, []);
 
   function handleLike() {
     if (!onSaveAsFAQ || !userQuestion || saved) return;
@@ -94,29 +112,49 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
 
             {sourcesExpanded && (
               <div className="mt-2 flex flex-col gap-1">
-                {sources.map((source, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 px-3 py-2.5 rounded-[6px] bg-[#18181B] border border-white/[0.06] hover:border-white/[0.12] transition-colors"
-                  >
-                    <span className="shrink-0 mt-0.5 text-[11px] font-semibold text-[#D71920] font-mono">
-                      [{i + 1}]
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[13px] text-[#FAFAFA] leading-snug truncate">
-                        {source.document_title}
-                      </p>
-                      <p className="text-[11px] font-mono text-[#52525B] mt-0.5">
-                        p.{source.page_number}
-                        {source.relevance_score != null && (
-                          <span className="ml-2 text-[#D71920]/70">
-                            {Math.round(source.relevance_score * 100)}% match
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                {sources.map((source, i) => {
+                  const key = `${source.document_id}-${source.page_number}`;
+                  const isLoading = loadingSource === key;
+                  const hasFile = !!source.file_path;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => hasFile && handleSourceClick(source)}
+                      disabled={isLoading || !hasFile}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-[6px] bg-[#18181B] border border-white/[0.06] transition-all text-left w-full ${
+                        hasFile
+                          ? "hover:border-[#D71920]/30 hover:bg-[#D71920]/[0.04] cursor-pointer"
+                          : "cursor-default"
+                      }`}
+                    >
+                      <span className="shrink-0 mt-0.5 text-[11px] font-semibold text-[#D71920] font-mono">
+                        [{i + 1}]
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] text-[#FAFAFA] leading-snug truncate">
+                          {source.document_title}
+                        </p>
+                        <p className="text-[11px] font-mono text-[#52525B] mt-0.5">
+                          p.{source.page_number}
+                          {source.relevance_score != null && (
+                            <span className="ml-2 text-[#D71920]/70">
+                              {Math.round(source.relevance_score * 100)}% match
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      {hasFile && (
+                        <span className="shrink-0 mt-1 text-[#52525B]">
+                          {isLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          )}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

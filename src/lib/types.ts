@@ -85,6 +85,7 @@ export interface MessageSource {
   document_title: string;
   page_number: number;
   relevance_score: number;
+  file_path?: string;
 }
 
 export interface FAQ {
