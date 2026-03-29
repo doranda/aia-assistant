@@ -207,7 +207,8 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
   }
 
   return (
-    <div className="flex h-[calc(100dvh-48px-80px)] lg:h-[calc(100dvh-48px)]">
+    <main className="flex h-[calc(100dvh-48px-80px)] lg:h-[calc(100dvh-48px)]">
+      <h1 className="sr-only">Chat</h1>
       <ConversationSidebar
         conversations={convList}
         activeId={activeConvId}
@@ -306,6 +307,6 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
         </div>
         <ChatInput onSend={handleSend} disabled={isStreaming} />
       </div>
-    </div>
+    </main>
   );
 }

@@ -71,7 +71,7 @@ export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { 
         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-label="System online" />
         <button
           onClick={handleSignOut}
-          className="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-semibold text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors cursor-pointer"
+          className="w-10 h-10 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-semibold text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors cursor-pointer"
           aria-label="Sign out"
         >
           {userInitials}

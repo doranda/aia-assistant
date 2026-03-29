@@ -182,7 +182,7 @@ export function TeamManagement({
   );
 
   return (
-    <div className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
+    <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
       <div className="flex items-center justify-between mb-12">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-b from-[#f5f5f7] to-white/70 bg-clip-text text-transparent">
@@ -452,6 +452,6 @@ export function TeamManagement({
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }

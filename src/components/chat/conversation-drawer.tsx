@@ -19,7 +19,7 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
   return (
     <div className="lg:hidden flex items-center gap-2 mb-4">
       <Sheet>
-        <SheetTrigger className="text-xs text-gray-9 font-semibold px-3 py-1.5 rounded-full border border-white/[0.06] hover:text-gray-12 transition-all">
+        <SheetTrigger className="text-xs text-gray-9 font-semibold px-3 py-2.5 min-h-[44px] rounded-full border border-white/[0.06] hover:text-gray-12 transition-all">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1">
             <line x1="3" y1="6" x2="21" y2="6" />
             <line x1="3" y1="12" x2="21" y2="12" />
@@ -87,7 +87,7 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
           </div>
         </SheetContent>
       </Sheet>
-      <button onClick={onNew} className="text-xs text-white font-bold px-4 py-1.5 rounded-full bg-gradient-to-br from-ruby-9 to-ruby-10">
+      <button onClick={onNew} className="text-xs text-white font-bold px-4 py-2.5 min-h-[44px] rounded-full bg-gradient-to-br from-ruby-9 to-ruby-10">
         + New
       </button>
     </div>

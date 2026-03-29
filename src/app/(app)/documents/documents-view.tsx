@@ -82,7 +82,7 @@ export function DocumentsView({ documents, userRole }: { documents: Document[]; 
   }
 
   return (
-    <div className="max-w-[980px] mx-auto px-6 pt-16 lg:pt-24 pb-24">
+    <main className="max-w-[980px] mx-auto px-6 pt-16 lg:pt-24 pb-24">
       <div className="flex items-baseline justify-between mb-10 lg:mb-14">
         <h1 className="text-3xl lg:text-[40px] font-extrabold tracking-tight bg-gradient-to-b from-[#f5f5f7] to-white/70 bg-clip-text text-transparent">
           Documents
@@ -142,6 +142,6 @@ export function DocumentsView({ documents, userRole }: { documents: Document[]; 
           onOpenChange={(open) => { if (!open) setEditingDoc(null); }}
         />
       )}
-    </div>
+    </main>
   );
 }

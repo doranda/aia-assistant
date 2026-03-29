@@ -90,8 +90,8 @@ export function DocumentTable({ documents, onEdit, onIngest, ingestingId, userRo
   }
 
   return (
-    <div className="hidden lg:block border-t border-white/[0.04] pt-2">
-      <table className="w-full border-collapse">
+    <div className="hidden lg:block border-t border-white/[0.04] pt-2 overflow-x-auto">
+      <table className="w-full border-collapse min-w-[800px]">
         <thead>
           <tr>
             {["Name", "Category", "Company", "Tags", "Status", "Uploaded", ""].map((h, i) => (

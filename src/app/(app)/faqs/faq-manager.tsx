@@ -160,7 +160,7 @@ export function FAQManager() {
                     <div className="flex gap-1">
                       <button
                         onClick={() => startEdit(faq)}
-                        className="p-1.5 rounded-md text-gray-8 hover:text-white hover:bg-white/[0.06] transition-all"
+                        className="p-2.5 rounded-md text-gray-8 hover:text-white hover:bg-white/[0.06] transition-all"
                         title="Edit"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -186,7 +186,7 @@ export function FAQManager() {
                       ) : (
                         <button
                           onClick={() => setConfirmDeleteId(faq.id)}
-                          className="p-1.5 rounded-md text-gray-8 hover:text-red-400 hover:bg-white/[0.06] transition-all"
+                          className="p-2.5 rounded-md text-gray-8 hover:text-red-400 hover:bg-white/[0.06] transition-all"
                           title="Delete"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
