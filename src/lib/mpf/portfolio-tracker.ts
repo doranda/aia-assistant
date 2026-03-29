@@ -272,21 +272,23 @@ export async function requestEmergencySwitch(params: {
 
   // Count switches this month
   const monthStart = new Date().toISOString().slice(0, 7) + "-01";
-  const { data: monthSwitches } = await supabase
+  const { data: monthSwitches, error: monthError } = await supabase
     .from("mpf_pending_switches")
     .select("id")
     .in("status", ["pending", "settled"])
     .gte("created_at", monthStart);
+  if (monthError) console.error("[mpf-tracker] requestEmergencySwitch month count:", monthError);
   const monthCount = monthSwitches?.length || 0;
 
   // Get last switch slippage
-  const { data: lastSwitch } = await supabase
+  const { data: lastSwitch, error: lastSwitchError } = await supabase
     .from("mpf_pending_switches")
     .select("settlement_date, sell_nav_total, buy_nav_total, old_allocation, new_allocation")
     .eq("status", "settled")
     .order("settled_at", { ascending: false })
     .limit(1)
     .single();
+  if (lastSwitchError && lastSwitchError.code !== "PGRST116") console.error("[mpf-tracker] requestEmergencySwitch last switch:", lastSwitchError);
 
   const lastSwitchInfo = lastSwitch
     ? `Last switch settled ${lastSwitch.settlement_date}. Slippage: ${lastSwitch.sell_nav_total && lastSwitch.buy_nav_total ? (((lastSwitch.buy_nav_total - lastSwitch.sell_nav_total) / lastSwitch.sell_nav_total) * 100).toFixed(2) + "%" : "N/A"}`
@@ -408,12 +410,13 @@ export async function approveSwitch(
 
 export async function expireStaleRequests(): Promise<number> {
   const supabase = createAdminClient();
-  const { data: expired } = await supabase
+  const { data: expired, error: expireError } = await supabase
     .from("mpf_pending_switches")
     .update({ status: "expired" })
     .eq("status", "awaiting_approval")
     .lt("expires_at", new Date().toISOString())
     .select("id");
+  if (expireError) console.error("[mpf-tracker] expireStaleRequests:", expireError);
 
   const count = expired?.length || 0;
   if (count > 0) {

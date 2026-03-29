@@ -422,13 +422,14 @@ export async function expireStaleIlasRequests(
   portfolioType: IlasPortfolioType
 ): Promise<number> {
   const supabase = createAdminClient();
-  const { data: expired } = await supabase
+  const { data: expired, error: expireError } = await supabase
     .from("ilas_portfolio_orders")
     .update({ status: "expired" })
     .eq("portfolio_type", portfolioType)
     .eq("status", "awaiting_approval")
     .lt("expires_at", new Date().toISOString())
     .select("id");
+  if (expireError) console.error("[ilas-tracker] expireStaleRequests:", expireError);
 
   const count = expired?.length || 0;
   if (count > 0) {
