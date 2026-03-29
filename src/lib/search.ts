@@ -170,6 +170,8 @@ export async function searchDocuments(
   }
 
   // Score results by keyword matches in content + title
+  // Exact match priority: "OYS2" in query should rank OYS2 docs above OYS docs
+  const queryLower = query.toLowerCase();
   const scored = allChunks.map((chunk) => {
     const contentLower = chunk.content.toLowerCase();
     const doc = chunk.documents as unknown as {
@@ -181,8 +183,6 @@ export async function searchDocuments(
     let titleMatches = 0;
     for (const kw of keywords) {
       if (contentLower.includes(kw)) matchCount++;
-      // Strong boost for title matches — critical for non-English content
-      // where product codes (OYS2, ECP2) appear in titles but not in Chinese content
       if (titleLower.includes(kw)) {
         titleMatches++;
         matchCount += 2;
@@ -190,13 +190,29 @@ export async function searchDocuments(
     }
     // If all keywords matched in title, guarantee a high minimum score
     const titleBonus = titleMatches === keywords.length ? 1 : 0;
+
+    // Exact title match boost: if the query contains a product code that
+    // appears exactly in the title, boost heavily. This prevents "OYS" from
+    // outranking "OYS2" when the user specifically asked for "OYS2".
+    let exactBonus = 0;
+    const queryWords = queryLower.split(/\s+/);
+    for (const word of queryWords) {
+      if (word.length >= 2 && titleLower.includes(word)) {
+        // Check if this is a more specific match than a substring
+        // e.g., title "OYS2 launchpad" exactly contains "oys2"
+        // but title "OYS launchpad" only contains "oys" (which is a substring of "oys2")
+        const wordInTitle = titleLower.match(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
+        if (wordInTitle) exactBonus += 3;
+      }
+    }
+
     return {
       id: chunk.id,
       document_id: chunk.document_id,
       content: chunk.content,
       page_number: chunk.page_number || 1,
       chunk_index: chunk.chunk_index,
-      rank: Math.max(matchCount / keywords.length, titleBonus),
+      rank: Math.max((matchCount + exactBonus) / keywords.length, titleBonus),
       doc_title: doc.title,
       doc_category: doc.category,
     } as SearchResult;

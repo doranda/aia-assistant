@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { ollamaChatStream } from "@/lib/ollama";
+import { aiChatStream } from "@/lib/ai-chat";
 import {
   searchDocuments,
   formatContextForPrompt,
@@ -178,7 +178,7 @@ export async function POST(request: Request) {
     content: message,
   });
 
-  // 5. Build messages for Ollama
+  // 5. Build messages for AI Gateway
   // Embed the document context directly in the user message so the model can't ignore it
   const userMessageWithContext = searchResults.length > 0
     ? `Based on the following document excerpts, answer my question.\n\n---\nDOCUMENT EXCERPTS:\n${context}\n---\n\nMy question: ${message}`
@@ -190,7 +190,7 @@ export async function POST(request: Request) {
       ? "\n\nLANGUAGE: Reply in English. Use English for all explanations. Include Chinese product names in parentheses where relevant."
       : "\n\nLANGUAGE: Match the user's language. If they write in English, reply in English. If Chinese, reply in Chinese.";
 
-  const ollamaMessages = [
+  const chatMessages = [
     { role: "system" as const, content: SYSTEM_PROMPT + langInstruction },
     ...(history || []).map((m) => ({
       role: m.role as "user" | "assistant",
@@ -199,9 +199,9 @@ export async function POST(request: Request) {
     { role: "user" as const, content: userMessageWithContext },
   ];
 
-  // 6. Stream response from Ollama
+  // 6. Stream response from AI Gateway
   try {
-    const stream = await ollamaChatStream(ollamaMessages);
+    const stream = await aiChatStream(chatMessages);
 
     // Collect full response for saving to DB
     let fullResponse = "";

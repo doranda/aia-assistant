@@ -2,6 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { NewsFeed } from "@/components/mpf/news-feed";
 import type { MpfNews } from "@/lib/mpf/types";
 
+export const dynamic = "force-dynamic";
+
 export default async function MpfNewsPage() {
   const supabase = createAdminClient();
 
