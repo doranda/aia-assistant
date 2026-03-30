@@ -15,8 +15,9 @@ export function FAQManager() {
 
   useEffect(() => {
     fetch("/api/faq")
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error("Failed to fetch FAQs"); return r.json(); })
       .then((data) => { if (Array.isArray(data)) setFaqs(data); })
+      .catch((err) => console.error("[faq-manager]", err))
       .finally(() => setLoading(false));
   }, []);
 

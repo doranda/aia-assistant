@@ -158,7 +158,11 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
         }
       }
 
-      const reader = res.body!.getReader();
+      if (!res.body) {
+        setIsStreaming(false);
+        return;
+      }
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
       let detectedFAQ = isFAQ;

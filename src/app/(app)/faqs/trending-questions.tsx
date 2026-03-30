@@ -13,8 +13,9 @@ export function TrendingQuestions() {
 
   useEffect(() => {
     fetch("/api/popular-queries")
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error("Failed to fetch queries"); return r.json(); })
       .then((data) => { if (Array.isArray(data)) setQueries(data); })
+      .catch((err) => console.error("[trending-questions]", err))
       .finally(() => setLoading(false));
   }, []);
 
