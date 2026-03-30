@@ -38,11 +38,12 @@ export async function GET(req: NextRequest) {
 
     // Step 4: Monthly switch count warning
     const monthStart = today.slice(0, 7) + "-01";
-    const { data: monthSwitches } = await supabase
+    const { data: monthSwitches, error: switchErr } = await supabase
       .from("mpf_pending_switches")
       .select("id")
       .in("status", ["pending", "settled"])
       .gte("created_at", monthStart);
+    if (switchErr) console.error("[portfolio-nav] monthSwitches query failed:", switchErr);
     const monthCount = monthSwitches?.length || 0;
 
     if (monthCount > 2) {

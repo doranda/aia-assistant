@@ -40,8 +40,9 @@ export async function GET(req: NextRequest) {
 
   // STEP 2: CLASSIFY unclassified articles
   try {
-    const { data: articles } = await supabase.from("mpf_news").select("id, headline")
+    const { data: articles, error: articlesErr } = await supabase.from("mpf_news").select("id, headline")
       .eq("impact_tags", "{}").order("published_at", { ascending: false }).limit(5);
+    if (articlesErr) console.error("[news-cron] articles query failed:", articlesErr);
     for (const a of articles || []) {
       try {
         const r = await fetch(GATEWAY_URL, {
@@ -72,7 +73,8 @@ export async function GET(req: NextRequest) {
       .limit(20);
 
     const { IMPACT_TAG_TO_FUNDS } = await import("@/lib/mpf/constants");
-    const { data: allFunds } = await supabase.from("mpf_funds").select("id, fund_code").eq("is_active", true);
+    const { data: allFunds, error: fundsErr } = await supabase.from("mpf_funds").select("id, fund_code").eq("is_active", true);
+    if (fundsErr) console.error("[news-cron] allFunds query failed:", fundsErr);
     const codeToId = new Map((allFunds || []).map(f => [f.fund_code, f.id]));
 
     for (const article of uncorrelated || []) {

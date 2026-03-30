@@ -23,11 +23,13 @@ export async function GET(req: NextRequest) {
   const startTime = Date.now();
 
   // Log scraper run start
-  const { data: run } = await supabase
+  const { data: run, error: runError } = await supabase
     .from("scraper_runs")
     .insert({ scraper_name: "fund_prices", status: "running" })
     .select()
     .single();
+
+  if (runError) console.error("[prices-cron] scraper_runs insert failed:", runError);
 
   let source = "unknown";
   let count = 0;

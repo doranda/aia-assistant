@@ -16,11 +16,13 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient();
   const startTime = Date.now();
 
-  const { data: run } = await supabase
+  const { data: run, error: runError } = await supabase
     .from("scraper_runs")
     .insert({ scraper_name: "weekly_insight", status: "running" })
     .select()
     .single();
+
+  if (runError) console.error("[weekly-cron] scraper_runs insert failed:", runError);
 
   try {
     // Create pending insight

@@ -20,20 +20,22 @@ export async function GET(req: NextRequest) {
 
   try {
     // Find unscored live decisions (prioritized)
-    const { data: unscoredLive } = await supabase
+    const { data: unscoredLive, error: liveErr } = await supabase
       .from("mpf_insights")
       .select("id, content_en, created_at, type")
       .eq("type", "rebalance_debate")
       .eq("status", "completed")
       .order("created_at", { ascending: true });
+    if (liveErr) console.error("[scoring] unscored live query failed:", liveErr);
 
     // Find unscored backtest results
-    const { data: unscoredBacktest } = await supabase
+    const { data: unscoredBacktest, error: backtestErr } = await supabase
       .from("mpf_backtest_results")
       .select("id, debate_log, allocation, sim_date, rebalance_triggered")
       .eq("rebalance_triggered", true)
       .order("sim_date", { ascending: true })
       .limit(50);
+    if (backtestErr) console.error("[scoring] unscored backtest query failed:", backtestErr);
 
     // Determine which need scoring
     const toScore: { type: "live" | "backtest"; id: string; debateLog: string; allocation: { code: string; weight: number }[]; decisionDate: string }[] = [];
