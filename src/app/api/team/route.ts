@@ -54,6 +54,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
+    // Only admins can assign admin role
+    if (newRole === "admin" && role !== "admin") {
+      return NextResponse.json({ error: "Only admins can assign admin role" }, { status: 403 });
+    }
+
     const adminClient = createAdminClient();
 
     // Invite user by email — Supabase sends an invitation link automatically
@@ -120,6 +125,17 @@ export async function PATCH(request: Request) {
 
     if (newRole !== undefined && !canChangeRoles(role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Only admins can assign admin role
+    if (newRole === "admin" && role !== "admin") {
+      return NextResponse.json({ error: "Only admins can assign admin role" }, { status: 403 });
+    }
+
+    // Validate role value
+    const validRoles: UserRole[] = ["admin", "manager", "agent", "member"];
+    if (newRole !== undefined && !validRoles.includes(newRole as UserRole)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
     if (is_active !== undefined && !canManageTeam(role)) {

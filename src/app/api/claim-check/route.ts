@@ -57,6 +57,18 @@ export async function POST(request: Request) {
   const language = (formData.get("language") as string) || "auto";
   const files = formData.getAll("files") as File[];
 
+  // File size limit: 20MB per file, 5 files max
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
+  const MAX_FILES = 5;
+  if (files.length > MAX_FILES) {
+    return NextResponse.json({ error: `Maximum ${MAX_FILES} files allowed` }, { status: 400 });
+  }
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: `File "${file.name}" exceeds 20MB limit` }, { status: 400 });
+    }
+  }
+
   if (!claimType?.trim()) {
     return NextResponse.json(
       { error: "Claim type is required" },

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       ...result,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    console.error("[mpf/approve-switch] error:", e);
+    return NextResponse.json({ error: "Switch approval failed" }, { status: 400 });
   }
 }

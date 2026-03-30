@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("[mpf/refresh] POST error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Refresh failed" },
+      { error: "Refresh failed" },
       { status: 500 }
     );
   }

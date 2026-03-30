@@ -37,6 +37,11 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
+    // File size limit: 10MB for spreadsheets
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: "File exceeds 10MB limit" }, { status: 400 });
+    }
+
     let rows: { fund_code: string; date: string; nav: number }[];
     try {
       const buffer = Buffer.from(await file.arrayBuffer());

@@ -8,6 +8,18 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    // Only admin/manager can trigger ingestion (rebuild-all is expensive)
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    const role = profile?.role as string;
+    if (role !== "admin" && role !== "manager") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     let body: Record<string, unknown>;
     try {
       body = await request.json();

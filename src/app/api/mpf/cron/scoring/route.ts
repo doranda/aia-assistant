@@ -174,6 +174,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, scored, ms: Date.now() - startTime });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown", ms: Date.now() - startTime }, { status: 500 });
+    console.error("[mpf/cron/scoring] error:", error);
+    return NextResponse.json({ error: "Scoring failed", ms: Date.now() - startTime }, { status: 500 });
   }
 }

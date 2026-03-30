@@ -14,6 +14,18 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Only admin/manager can edit document metadata
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    const userRole = (profile?.role || "member") as import("@/lib/types").UserRole;
+    if (userRole !== "admin" && userRole !== "manager") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     let body: Record<string, unknown>;
     try {
       body = await request.json();
