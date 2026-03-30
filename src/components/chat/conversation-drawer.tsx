@@ -36,10 +36,11 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
               + New chat
             </button>
             {conversations.map((conv) => (
-              <div
+              <button
+                type="button"
                 key={conv.id}
                 className={cn(
-                  "group relative w-full text-left px-3 py-3 rounded-lg transition-colors cursor-pointer",
+                  "group relative w-full text-left px-3 py-3 rounded-lg transition-colors cursor-pointer bg-transparent appearance-none",
                   confirmId === conv.id
                     ? "bg-red-950/30 border-l-2 border-l-red-500"
                     : activeId === conv.id
@@ -73,8 +74,8 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
                     <div className="text-[11px] text-gray-8 mt-0.5">{new Date(conv.updated_at).toLocaleDateString()}</div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmId(conv.id); }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-white/[0.08] text-gray-8 hover:text-red-400 transition-all"
-                      title="Delete conversation"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-white/[0.08] text-gray-8 hover:text-red-400 transition-all min-h-[44px] min-w-[44px]"
+                      aria-label="Delete conversation"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M3 6h18" /><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
@@ -82,7 +83,7 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
                     </button>
                   </>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         </SheetContent>

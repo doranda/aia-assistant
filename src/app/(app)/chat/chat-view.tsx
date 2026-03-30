@@ -246,7 +246,7 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
                     key={q}
                     onClick={() => handleSend(q)}
                     disabled={isStreaming}
-                    className="px-3.5 py-2 text-[13px] rounded-lg border border-white/[0.06] bg-white/[0.03] text-gray-9 hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                    className="px-3.5 py-2 text-[13px] rounded-lg border border-white/[0.06] bg-white/[0.03] text-gray-9 hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer disabled:opacity-50 min-h-[44px]"
                   >
                     {q}
                   </button>
@@ -300,7 +300,7 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
             <button
               key={lang}
               onClick={() => setLanguage(lang)}
-              className={`text-[11px] px-2.5 py-1 rounded-full transition-all ${
+              className={`text-[11px] px-2.5 py-1 rounded-full transition-all min-h-[44px] ${
                 language === lang
                   ? "bg-white/[0.08] text-[#f5f5f7] font-semibold"
                   : "text-gray-8 hover:text-gray-11"

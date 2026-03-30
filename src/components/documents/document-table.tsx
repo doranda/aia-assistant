@@ -134,7 +134,7 @@ export function DocumentTable({ documents, onEdit, onIngest, ingestingId, userRo
                   <button
                     onClick={() => onEdit(doc)}
                     className="text-gray-8 hover:text-gray-12 p-1 rounded-md hover:bg-white/[0.05]"
-                    title="Edit document"
+                    aria-label="Edit document"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -146,7 +146,7 @@ export function DocumentTable({ documents, onEdit, onIngest, ingestingId, userRo
                       onClick={() => handleDelete(doc.id)}
                       disabled={deletingId === doc.id}
                       className="text-gray-8 hover:text-ruby-11 p-1 rounded-md hover:bg-ruby-9/[0.05] disabled:opacity-40"
-                      title={canDeleteDocument(userRole) ? "Delete" : "Request delete"}
+                      aria-label={canDeleteDocument(userRole) ? "Delete" : "Request delete"}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6" />

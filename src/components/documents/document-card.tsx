@@ -29,8 +29,9 @@ interface DocumentCardProps {
 
 export function DocumentCard({ document: doc, onEdit, onIngest, ingestingId }: DocumentCardProps) {
   return (
-    <div
-      className="lg:hidden p-4 border-b border-white/[0.03] active:bg-white/[0.02] transition-colors"
+    <button
+      type="button"
+      className="lg:hidden p-4 border-b border-white/[0.03] active:bg-white/[0.02] transition-colors w-full text-left bg-transparent appearance-none"
       onClick={() => onEdit(doc)}
     >
       <div className="flex items-start justify-between gap-3">
@@ -47,7 +48,7 @@ export function DocumentCard({ document: doc, onEdit, onIngest, ingestingId }: D
             <button
               onClick={(e) => { e.stopPropagation(); onIngest(doc.id); }}
               disabled={ingestingId === doc.id}
-              className="text-[10px] font-semibold text-amber-400 disabled:opacity-40"
+              className="text-[10px] font-semibold text-amber-400 disabled:opacity-40 min-h-[44px]"
             >
               {ingestingId === doc.id ? "..." : "Index"}
             </button>
@@ -61,6 +62,6 @@ export function DocumentCard({ document: doc, onEdit, onIngest, ingestingId }: D
           ))}
         </div>
       )}
-    </div>
+    </button>
   );
 }

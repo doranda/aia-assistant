@@ -100,6 +100,8 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
             <button
               onClick={() => setSourcesExpanded(!sourcesExpanded)}
               className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#52525B] hover:text-[#A1A1AA] transition-colors"
+              aria-label={sourcesExpanded ? "Hide sources" : "Show sources"}
+              aria-expanded={sourcesExpanded}
             >
               <span>{sources.length} source{sources.length > 1 ? "s" : ""}</span>
               <svg

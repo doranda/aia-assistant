@@ -230,13 +230,13 @@ export function TeamManagement({
                 <div className="flex gap-2 shrink-0">
                   <button
                     onClick={() => handleDeleteAction(req.id, "approve")}
-                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-ruby-9/10 text-ruby-11 border border-ruby-9/20 hover:bg-ruby-9/20 transition-colors"
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-ruby-9/10 text-ruby-11 border border-ruby-9/20 hover:bg-ruby-9/20 transition-colors min-h-[44px]"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => handleDeleteAction(req.id, "reject")}
-                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/[0.04] text-gray-9 border border-white/[0.06] hover:bg-white/[0.08] transition-colors"
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/[0.04] text-gray-9 border border-white/[0.06] hover:bg-white/[0.08] transition-colors min-h-[44px]"
                   >
                     Reject
                   </button>
@@ -345,7 +345,7 @@ export function TeamManagement({
                     onClick={() =>
                       handleToggleActive(member.id, !member.is_active)
                     }
-                    className={`flex items-center gap-1.5 text-[11px] transition-colors ${
+                    className={`flex items-center gap-1.5 text-[11px] transition-colors min-h-[44px] ${
                       member.is_active
                         ? "text-[#30d158] hover:text-gray-8"
                         : "text-gray-7 hover:text-[#30d158]"

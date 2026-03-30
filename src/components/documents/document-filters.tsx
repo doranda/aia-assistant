@@ -30,7 +30,7 @@ export function DocumentFilters({ activeFilter, onFilterChange }: DocumentFilter
           key={filter.value}
           onClick={() => onFilterChange(filter.value)}
           className={cn(
-            "text-xs font-semibold px-3.5 py-1.5 rounded-full border whitespace-nowrap transition-all",
+            "text-xs font-semibold px-3.5 py-1.5 rounded-full border whitespace-nowrap transition-all min-h-[44px]",
             activeFilter === filter.value
               ? "text-gray-12 bg-gradient-to-b from-white/[0.06] to-white/[0.02] border-transparent border-b-2 border-b-ruby-9"
               : "text-gray-8 border-white/5 hover:text-gray-11 hover:border-white/10"
