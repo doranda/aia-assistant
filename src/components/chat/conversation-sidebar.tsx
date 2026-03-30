@@ -28,11 +28,12 @@ export function ConversationSidebar({ conversations, activeId, onSelect, onNew, 
           <p className="text-xs text-gray-7 px-4 py-8 text-center">No conversations yet</p>
         )}
         {conversations.map((conv) => (
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             key={conv.id}
             className={cn(
-              "group relative w-full text-left px-4 py-3.5 rounded-xl mb-1.5 border border-transparent border-l-2 transition-all cursor-pointer bg-transparent appearance-none",
+              "group relative w-full text-left px-4 py-3.5 rounded-xl mb-1.5 border border-transparent border-l-2 transition-all cursor-pointer",
               confirmId === conv.id
                 ? "bg-red-950/30 border-red-500/30 border-l-red-500"
                 : activeId === conv.id
@@ -40,6 +41,7 @@ export function ConversationSidebar({ conversations, activeId, onSelect, onNew, 
                   : "border-l-transparent hover:bg-white/[0.03] hover:border-l-ruby-9/30"
             )}
             onClick={() => { setConfirmId(null); onSelect(conv.id); }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setConfirmId(null); onSelect(conv.id); } }}
           >
             {confirmId === conv.id ? (
               <>
@@ -75,7 +77,7 @@ export function ConversationSidebar({ conversations, activeId, onSelect, onNew, 
                 </button>
               </>
             )}
-          </button>
+          </div>
         ))}
       </div>
     </aside>

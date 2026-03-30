@@ -36,11 +36,12 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
               + New chat
             </button>
             {conversations.map((conv) => (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 key={conv.id}
                 className={cn(
-                  "group relative w-full text-left px-3 py-3 rounded-lg transition-colors cursor-pointer bg-transparent appearance-none",
+                  "group relative w-full text-left px-3 py-3 rounded-lg transition-colors cursor-pointer",
                   confirmId === conv.id
                     ? "bg-red-950/30 border-l-2 border-l-red-500"
                     : activeId === conv.id
@@ -48,6 +49,7 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
                       : "hover:bg-white/[0.03]"
                 )}
                 onClick={() => { setConfirmId(null); onSelect(conv.id); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setConfirmId(null); onSelect(conv.id); } }}
               >
                 {confirmId === conv.id ? (
                   <>
@@ -83,7 +85,7 @@ export function ConversationDrawer({ conversations, activeId, onSelect, onNew, o
                     </button>
                   </>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </SheetContent>
