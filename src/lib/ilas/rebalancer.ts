@@ -251,13 +251,26 @@ export async function evaluateAndRebalanceIlas(
     }
   }
 
-  // Check 2: Metrics coverage — 80% of active funds must have 3Y metrics
+  // Check 2: Metrics coverage — 80% of active funds must have metrics (any period)
   const activeFundCodes = (activeFunds || []).map(f => f.fund_code);
-  const { data: metricsCount, error: metricsCountError } = await supabase
+  // Try 1y first, fall back to since_launch for early-stage data
+  const { data: metricsCount1y } = await supabase
     .from("ilas_fund_metrics")
     .select("fund_code")
-    .eq("period", "3y")
+    .eq("period", "1y")
     .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
+  const { data: metricsSL } = await supabase
+    .from("ilas_fund_metrics")
+    .select("fund_code")
+    .eq("period", "since_launch")
+    .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
+  // Union: fund has metrics if it has either period
+  const metricsSet = new Set([
+    ...(metricsCount1y || []).map(m => m.fund_code),
+    ...(metricsSL || []).map(m => m.fund_code),
+  ]);
+  const metricsCount = Array.from(metricsSet).map(fc => ({ fund_code: fc }));
+  const metricsCountError = null;
   if (metricsCountError) console.error(`${logPrefix} Failed to fetch metrics count:`, metricsCountError);
 
   const fundsWithMetrics = metricsCount?.length || 0;

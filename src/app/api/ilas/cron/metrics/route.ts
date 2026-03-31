@@ -54,7 +54,7 @@ export async function GET(req: Request) {
         continue;
       }
 
-      if (!prices || prices.length < 20) {
+      if (!prices || prices.length < 3) {
         skipped++;
         continue;
       }

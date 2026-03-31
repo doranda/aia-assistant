@@ -44,7 +44,7 @@ export function computeIlasMetrics(
 ): IlasMetricsResult {
   const sliced = slicePricesForPeriod(prices, period);
 
-  if (!sliced || sliced.length < 20) {
+  if (!sliced || sliced.length < 3) {
     return {
       sharpe_ratio: null,
       sortino_ratio: null,
