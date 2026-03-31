@@ -5,7 +5,7 @@ import { evaluateAndRebalanceIlas } from "@/lib/ilas/rebalancer";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
