@@ -8,7 +8,7 @@ import type { MetricPeriod } from "@/lib/ilas/types";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const PERIODS: MetricPeriod[] = ["1y", "3y", "5y", "since_launch"];
 
