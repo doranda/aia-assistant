@@ -239,15 +239,20 @@ export async function evaluateAndRebalanceIlas(
       }
     }
 
-    if (staleFunds.length > 0) {
-      const msg = `BLOCKED: stale price data for ${staleFunds.join(", ")}. Fix data pipeline before rebalancing.`;
+    // Allow up to 5% stale funds (tolerance for missing/delisted funds)
+    const stalePct = totalActive > 0 ? (staleFunds.length / totalActive) * 100 : 0;
+    if (stalePct > 5) {
+      const msg = `BLOCKED: stale price data for ${staleFunds.length} funds (${stalePct.toFixed(0)}%): ${staleFunds.slice(0, 10).join(", ")}${staleFunds.length > 10 ? "..." : ""}. Fix data pipeline before rebalancing.`;
       console.error(`${logPrefix} ${msg}`);
       await sendDiscordAlert({
         title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Stale Data)`,
-        description: `**${staleFunds.length} funds** have prices older than 5 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or data backfill to fix.`,
+        description: `**${staleFunds.length}/${totalActive} funds** (${stalePct.toFixed(0)}%) have prices older than ${ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS} days:\n${staleFunds.slice(0, 10).join(", ")}\n\nRun the price cron or data backfill to fix.`,
         color: COLORS.red,
       });
       return { rebalanced: false, reason: msg };
+    }
+    if (staleFunds.length > 0) {
+      console.warn(`${logPrefix} ${staleFunds.length} stale funds (within 5% tolerance): ${staleFunds.join(", ")}`);
     }
   }
 
