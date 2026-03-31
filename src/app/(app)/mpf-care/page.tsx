@@ -8,6 +8,7 @@ import { TopMovers } from "@/components/mpf/top-movers";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import { ModelPerformance } from "@/components/mpf/model-performance";
 import type { FundWithLatestPrice, MpfNews, MpfInsight, RebalanceScore } from "@/lib/mpf/types";
+import { PriceFreshnessBanner } from "@/components/price-freshness-banner";
 import { TrendingUp, Newspaper, Brain, Activity, BarChart3 } from "lucide-react";
 
 async function getOverviewData() {
@@ -200,6 +201,10 @@ export default async function MpfCarePage() {
       </header>
 
       <DisclaimerBanner />
+
+      <div className="mt-4">
+        <PriceFreshnessBanner priceDate={priceDate} label="MPF" />
+      </div>
 
       {/* Sub-navigation */}
       <nav aria-label="MPF Care sections" className="mt-8 flex items-center gap-2 sm:gap-4 flex-wrap">

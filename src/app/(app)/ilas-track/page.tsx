@@ -9,6 +9,7 @@ import { ILAS_CATEGORY_LABELS, ILAS_INSIGHT_DISCLAIMER } from "@/lib/ilas/consta
 import type { IlasFund, IlasFundCategory, IlasFundWithLatestPrice } from "@/lib/ilas/types";
 import { IlasPortfolioReference } from "@/components/ilas/portfolio-reference";
 import { IlasPortfolioTrackRecord } from "@/components/ilas/portfolio-track-record";
+import { PriceFreshnessBanner } from "@/components/price-freshness-banner";
 import { TrendingUp, BarChart3, Newspaper, Filter, PieChart } from "lucide-react";
 import Link from "next/link";
 
@@ -318,6 +319,10 @@ export default async function IlasTrackPage({
       >
         {ILAS_INSIGHT_DISCLAIMER.en}
       </aside>
+
+      <div className="mt-4">
+        <PriceFreshnessBanner priceDate={latestDate} label="ILAS" />
+      </div>
 
       {/* Sub-navigation */}
       <nav aria-label="ILAS Track sections" className="mt-8 flex items-center gap-2 sm:gap-4 flex-wrap">
