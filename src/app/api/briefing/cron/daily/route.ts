@@ -45,8 +45,8 @@ async function sendBriefingAlert(embed: DiscordEmbed): Promise<boolean> {
   }
 }
 
-// Discord embeds have a 4096 char limit for description
-// Send multiple embeds if content is long
+// Discord limits: 4096 chars per embed description, 6000 total chars across embeds per message
+// Split into multiple messages if needed
 async function sendLongBriefing(
   title: string,
   sections: { name: string; content: string; color: number }[]
@@ -61,19 +61,39 @@ async function sendLongBriefing(
     timestamp: new Date().toISOString(),
   }));
 
-  // Discord allows max 10 embeds per message
+  // Batch embeds so total description chars stay under 5800 (buffer for titles/metadata)
+  const batches: DiscordEmbed[][] = [];
+  let current: DiscordEmbed[] = [];
+  let currentChars = 0;
+
+  for (const embed of embeds) {
+    const embedChars = (embed.title?.length || 0) + (embed.description?.length || 0);
+    if (current.length > 0 && currentChars + embedChars > 5800) {
+      batches.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(embed);
+    currentChars += embedChars;
+  }
+  if (current.length > 0) batches.push(current);
+
   try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content: `**${title}**`,
-        embeds: embeds.slice(0, 10),
-      }),
-    });
-    if (!res.ok) {
-      console.error(`[briefing] Discord failed: ${res.status}`);
-      return false;
+    for (let i = 0; i < batches.length; i++) {
+      const content = i === 0
+        ? `**${title}**`
+        : `**${title}** (${i + 1}/${batches.length})`;
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, embeds: batches[i] }),
+      });
+      if (!res.ok) {
+        console.error(`[briefing] Discord failed on batch ${i + 1}: ${res.status}`);
+        return false;
+      }
+      // Small delay between messages to respect Discord rate limits
+      if (i < batches.length - 1) await new Promise((r) => setTimeout(r, 500));
     }
     return true;
   } catch (err) {
@@ -105,10 +125,11 @@ export async function GET(req: NextRequest) {
 
   try {
     // Fetch real news via Brave Search (parallel)
-    const [worldResults, hkResults, aiResults] = await Promise.all([
+    const [worldResults, hkResults, aiResults, bizResults] = await Promise.all([
       braveSearch("world news today important", 5),
       braveSearch("Hong Kong news today Asia Pacific", 5),
       braveSearch("AI artificial intelligence news today", 5),
+      braveSearch("business strategy growth tactic startup SaaS pricing retention", 5),
     ]);
 
     // Generate all sections in parallel using AI + real search results
@@ -131,10 +152,11 @@ From these results, pick the 4-5 most important stories and rewrite as a concise
 - 1 finance/markets story
 
 For each story:
-- Bold headline (max 80 chars)
+- Bold headline as a markdown link: **[Headline](source_url)**
 - 1-line summary with why it matters to a HK business owner
 
-If search results are empty, use your knowledge of current events. Keep total under 1500 chars.`
+IMPORTANT: Include the source URL from the search results as a markdown link in each headline. This lets the reader click through to the full article.
+If search results are empty, use your knowledge of current events (no links needed). Keep total under 2000 chars.`
       ),
 
       generateSection(
@@ -149,22 +171,26 @@ From these results, pick 3-4 of the most significant stories and rewrite concise
 - AI tools that could impact small business operations
 - Tech industry moves (acquisitions, launches, shutdowns)
 
-For each: bold headline + 1-line "why it matters for someone building AI products."
-If search results are empty, use your knowledge. Keep total under 1200 chars.`
+For each: **[Headline](source_url)** + 1-line "why it matters for someone building AI products."
+IMPORTANT: Include the source URL from the search results as a markdown link in each headline.
+If search results are empty, use your knowledge (no links needed). Keep total under 1500 chars.`
       ),
 
       generateSection(
         "business-discovery",
         `You are a business strategy advisor for a Hong Kong insurance agency leader who sells AI consulting to agencies. Today is ${date}.
 
-Surface 2-3 ADJACENT business insights — ideas from OUTSIDE insurance that could apply to his business:
-- A pricing model from SaaS/tech that insurance agencies could adopt
-- A retention tactic from hospitality/restaurants/fitness that applies to client service
-- A growth framework or mental model from a successful entrepreneur
+Here are real business/strategy articles from today:
+${bizResults || "No search results available"}
 
-These should be things he would NOT find in his normal reading. Be specific — name the company/person/framework.
-Format: **Framework/Insight Name** — 2-3 sentence explanation + how it applies to selling AI to insurance agencies.
-Keep under 1200 chars.`
+From these results, pick 2-3 insights that are ADJACENT to insurance — ideas from OTHER industries that could apply to his business. Look for:
+- A pricing model, retention tactic, or growth hack from SaaS/tech/hospitality/fitness
+- A framework or strategy a company used that insurance agencies could steal
+- Something he would NOT find in his normal insurance reading
+
+For each: **[Insight/Framework Name](source_url)** — 2-3 sentence explanation + how it applies to selling AI to insurance agencies.
+IMPORTANT: Include the source URL from the search results as a markdown link.
+If search results are empty, use your knowledge (no links needed). Keep under 1500 chars.`
       ),
 
       generateSection(
@@ -270,7 +296,7 @@ async function braveSearch(query: string, count = 5): Promise<string> {
       .slice(0, count)
       .map(
         (r: { title: string; description: string; url: string }) =>
-          `- **${r.title}**: ${r.description}`
+          `- **${r.title}**: ${r.description}\n  Source: ${r.url}`
       )
       .join("\n");
     return results;
@@ -288,7 +314,7 @@ async function generateSection(
     const { text } = await generateText({
       model: BRIEFING_MODEL as `${string}/${string}`,
       messages: [{ role: "user", content: prompt }],
-      maxOutputTokens: 800,
+      maxOutputTokens: 1200,
     });
     return text || `*No ${name} content generated*`;
   } catch (err) {
