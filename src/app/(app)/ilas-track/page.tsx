@@ -9,6 +9,7 @@ import { ILAS_CATEGORY_LABELS, ILAS_INSIGHT_DISCLAIMER } from "@/lib/ilas/consta
 import type { IlasFund, IlasFundCategory, IlasFundWithLatestPrice } from "@/lib/ilas/types";
 import { IlasPortfolioReference } from "@/components/ilas/portfolio-reference";
 import { IlasPortfolioTrackRecord } from "@/components/ilas/portfolio-track-record";
+import { DebateLog } from "@/components/mpf/debate-log";
 import { PriceFreshnessBanner } from "@/components/price-freshness-banner";
 import { TrendingUp, BarChart3, Newspaper, Filter, PieChart } from "lucide-react";
 import Link from "next/link";
@@ -117,6 +118,18 @@ async function getIlasData(isDistribution: boolean) {
     "",
   );
 
+  // 9. Get latest debate log for this portfolio type
+  const { data: latestDebate, error: debateErr } = await supabase
+    .from("ilas_insights")
+    .select("content_en, content_zh, created_at")
+    .eq("type", "rebalance_debate")
+    .eq("status", "completed")
+    .eq("trigger", `debate_rebalance_${portfolioType}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  if (debateErr && debateErr.code !== "PGRST116") console.error("[ilas-track] debate query failed:", debateErr.code, debateErr.message);
+
   return {
     fundsWithPrices,
     latestDate,
@@ -126,6 +139,7 @@ async function getIlasData(isDistribution: boolean) {
     portfolioNav,
     portfolioType: portfolioType as "accumulation" | "distribution",
     portfolioUpdatedAt,
+    latestDebate: latestDebate as { content_en: string | null; content_zh: string | null; created_at: string } | null,
   };
 }
 
@@ -297,7 +311,7 @@ export default async function IlasTrackPage({
 }) {
   const params = await searchParams;
   const isDistribution = params.tab === "distribution";
-  const { fundsWithPrices, latestDate, accCount, disCount, portfolioFunds, portfolioNav, portfolioType, portfolioUpdatedAt } = await getIlasData(isDistribution);
+  const { fundsWithPrices, latestDate, accCount, disCount, portfolioFunds, portfolioNav, portfolioType, portfolioUpdatedAt, latestDebate } = await getIlasData(isDistribution);
 
   return (
     <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 xl:py-24">
@@ -408,6 +422,18 @@ export default async function IlasTrackPage({
             portfolioType={portfolioType}
             priceDate={latestDate}
             updatedAt={portfolioUpdatedAt}
+          />
+        </section>
+      )}
+
+      {/* Debate Log — Why this allocation */}
+      {latestDebate && (
+        <section className="mb-12 sm:mb-16">
+          <DebateLog
+            summaryEn={latestDebate.content_en || ""}
+            summaryZh={latestDebate.content_zh || ""}
+            fullLog={latestDebate.content_en?.split("---").slice(1).join("---").trim() || ""}
+            createdAt={latestDebate.created_at}
           />
         </section>
       )}
