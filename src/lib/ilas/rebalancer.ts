@@ -20,7 +20,7 @@ import type { FundAllocation } from "./types";
 import { callGateway, parseJSON } from "@/lib/mpf/rebalancer";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
-const MODEL = "anthropic/claude-sonnet-4.6";
+const MODEL = "anthropic/claude-opus-4-6";
 
 // ===== Types =====
 
