@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { ChatView } from "./chat-view";
 
@@ -12,7 +13,8 @@ export default async function ChatPage() {
 
   if (!user) redirect("/login");
 
-  const { data: conversations, error } = await supabase
+  const adminDb = createAdminClient();
+  const { data: conversations, error } = await adminDb
     .from("conversations")
     .select("*")
     .eq("user_id", user.id)

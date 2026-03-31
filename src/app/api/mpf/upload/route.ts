@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canUploadMpfData } from "@/lib/permissions";
 import { upsertPrices } from "@/lib/mpf/scrapers/fund-prices";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import type { UserRole } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -44,12 +44,39 @@ export async function POST(req: NextRequest) {
 
     let rows: { fund_code: string; date: string; nav: number }[];
     try {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const workbook = XLSX.read(buffer, { type: "buffer" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json<{ fund_code: string; date: string; nav: number }>(sheet);
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(arrayBuffer);
+      const sheet = workbook.worksheets[0];
+      if (!sheet) throw new Error("No worksheet found");
+
+      const headers: string[] = [];
+      rows = [];
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) {
+          row.eachCell((cell, colNumber) => {
+            headers[colNumber] = String(cell.value ?? "").toLowerCase().trim();
+          });
+          return;
+        }
+        const obj: Record<string, unknown> = {};
+        row.eachCell((cell, colNumber) => {
+          obj[headers[colNumber]] = cell.value;
+        });
+        if (obj.fund_code && obj.date && obj.nav) {
+          const rawDate = obj.date;
+          const dateStr = rawDate instanceof Date
+            ? rawDate.toISOString().slice(0, 10)
+            : String(rawDate);
+          rows.push({
+            fund_code: String(obj.fund_code),
+            date: dateStr,
+            nav: Number(obj.nav),
+          });
+        }
+      });
     } catch (err) {
-      console.error("[upload] XLSX parse error:", err);
+      console.error("[upload] Excel parse error:", err);
       return NextResponse.json({ error: "Invalid spreadsheet format" }, { status: 400 });
     }
 

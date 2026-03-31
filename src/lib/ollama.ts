@@ -59,7 +59,8 @@ export async function ollamaChatStream(
     throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
   }
 
-  const reader = res.body!.getReader();
+  if (!res.body) throw new Error("Ollama returned no response body");
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";

@@ -17,6 +17,7 @@
     "ai": "^6.0.141",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "fast-xml-parser": "^5.5.9",
     "lucide-react": "^0.475.0",
     "next": "16.1.7",

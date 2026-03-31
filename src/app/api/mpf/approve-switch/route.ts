@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { approveSwitch } from "@/lib/mpf/portfolio-tracker";
 
 export async function POST(req: NextRequest) {
+  try {
   // Auth: require logged-in admin
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -47,5 +48,9 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error("[mpf/approve-switch] error:", e);
     return NextResponse.json({ error: "Switch approval failed" }, { status: 400 });
+  }
+  } catch (err) {
+    console.error("[mpf/approve-switch] POST error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

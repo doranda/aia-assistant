@@ -68,7 +68,8 @@ function seededRandom(seed: number): () => number {
 
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -175,12 +176,13 @@ export async function POST(req: Request) {
     }
 
     // 5. Log the run
-    await supabase.from("scraper_runs").insert({
+    const { error: logError } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_backfill",
       status: errors.length === 0 ? "success" : "partial",
       records_processed: totalInserted,
       error_message: errors.length > 0 ? errors.slice(0, 5).join("; ") : null,
     });
+    if (logError) console.error("[ilas/backfill] scraper_runs log failed:", logError);
 
     return NextResponse.json({
       ok: true,

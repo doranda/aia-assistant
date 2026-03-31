@@ -10,7 +10,8 @@ const PERIOD_DAYS: Record<ScorePeriod, number> = { "7d": 7, "30d": 30, "90d": 90
 const MAX_SCORES_PER_RUN = 10;
 
 export async function GET(req: NextRequest) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || req.headers.get("authorization") !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

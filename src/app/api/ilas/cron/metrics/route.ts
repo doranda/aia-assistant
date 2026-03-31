@@ -14,7 +14,8 @@ const PERIODS: MetricPeriod[] = ["1y", "3y", "5y", "since_launch"];
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -113,13 +114,14 @@ export async function GET(req: Request) {
     const ms = Date.now() - start;
 
     // Log scraper run
-    await supabase.from("scraper_runs").insert({
+    const { error: logError } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_metrics",
       status: errors === 0 ? "success" : "partial",
       records_processed: upserted,
       duration_ms: ms,
       error_message: errors > 0 ? `${errors} upsert errors` : null,
     });
+    if (logError) console.error("[ilas/metrics] scraper_runs log failed:", logError);
 
     console.log(`[ilas-metrics] Done: ${upserted} upserted, ${skipped} skipped, ${errors} errors in ${ms}ms`);
 

@@ -1,4 +1,6 @@
 // src/lib/mpf/scrapers/fund-prices.ts
+// NOTE: xlsx has known CVEs (prototype pollution, ReDoS). Used here ONLY for parsing
+// .xls files from MPFA (trusted government source). User-uploaded files use ExcelJS instead.
 import * as XLSX from "xlsx";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PriceSource } from "../types";
@@ -243,7 +245,11 @@ export async function upsertPrices(prices: ScrapedPrice[]): Promise<number> {
         { onConflict: "fund_id,date" }
       );
 
-    if (!error) upserted++;
+    if (error) {
+      console.error(`[fund-prices] upsert failed for fund ${fund_id} on ${price.date}:`, error);
+    } else {
+      upserted++;
+    }
   }
 
   return upserted;

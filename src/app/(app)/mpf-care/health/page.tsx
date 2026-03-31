@@ -16,13 +16,24 @@ import { Activity } from "lucide-react";
 export default async function HealthDashboardPage() {
   const supabase = createAdminClient();
 
-  const [pipeline, freshness, coverage, outliers, news] = await Promise.all([
-    getPipelineStatus(supabase),
-    getDataFreshness(supabase),
-    getMissingData(supabase),
-    getOutliers(supabase),
-    getNewsPipeline(supabase),
-  ]);
+  let pipeline, freshness, coverage, outliers, news;
+  try {
+    [pipeline, freshness, coverage, outliers, news] = await Promise.all([
+      getPipelineStatus(supabase),
+      getDataFreshness(supabase),
+      getMissingData(supabase),
+      getOutliers(supabase),
+      getNewsPipeline(supabase),
+    ]);
+  } catch (err) {
+    console.error("[health] Failed to fetch health data:", err);
+    return (
+      <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16">
+        <h1 className="text-2xl font-semibold tracking-tight">Pipeline Health</h1>
+        <p className="mt-4 text-zinc-500">Failed to load health data. Please try again.</p>
+      </main>
+    );
+  }
 
   return (
     <main className="max-w-[980px] mx-auto px-4 sm:px-6 py-8 lg:py-16 space-y-6">
