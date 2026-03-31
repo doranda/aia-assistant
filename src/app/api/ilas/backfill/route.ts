@@ -102,13 +102,12 @@ export async function POST(req: Request) {
       .select("id, fund_code, risk_rating");
     const fundMap = new Map((funds || []).map(f => [f.fund_code, f]));
 
-    // 3. Check existing prices to avoid duplicate backfill
-    const { data: existingDates } = await supabase
+    // 3. Check existing price dates to avoid duplicate backfill
+    const { data: existingDateRows } = await supabase
       .from("ilas_prices")
       .select("date")
-      .order("date", { ascending: true })
-      .limit(1);
-    const earliestExisting = existingDates?.[0]?.date;
+      .order("date", { ascending: true });
+    const existingDateSet = new Set((existingDateRows || []).map(r => r.date));
 
     // 4. Generate synthetic historical prices
     const BACKFILL_DAYS = 10; // ~2 weeks of business days
@@ -135,10 +134,8 @@ export async function POST(req: Request) {
       // Generate business days before the valuation date
       const backfillDates = getBusinessDays(valDate, BACKFILL_DAYS);
 
-      // Filter out dates we already have
-      const datesToFill = earliestExisting
-        ? backfillDates.filter(d => d < earliestExisting)
-        : backfillDates;
+      // Filter out dates we already have prices for
+      const datesToFill = backfillDates.filter(d => !existingDateSet.has(d));
 
       if (datesToFill.length === 0) {
         totalSkipped++;
