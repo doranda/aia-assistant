@@ -388,24 +388,15 @@ export default async function IlasTrackPage({
         </Link>
       </div>
 
-      {/* Top Movers */}
-      <section aria-labelledby="top-movers-heading" className="mt-10 sm:mt-12 mb-12 sm:mb-16">
-        <div className="flex items-center gap-2 mb-6">
-          <TrendingUp className="w-4 h-4 text-zinc-400" />
-          <h2 id="top-movers-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
-            Top Movers — {latestDate}
-          </h2>
-        </div>
-        <IlasTopMovers funds={fundsWithPrices} />
-      </section>
-
       {/* Portfolio Track Record */}
       {portfolioNav && portfolioNav.length > 0 && (
-        <IlasPortfolioTrackRecord
-          navHistory={portfolioNav}
-          portfolioType={portfolioType}
-          inceptionDate={portfolioNav[0]?.date ?? null}
-        />
+        <div className="mt-10 sm:mt-12">
+          <IlasPortfolioTrackRecord
+            navHistory={portfolioNav}
+            portfolioType={portfolioType}
+            inceptionDate={portfolioNav[0]?.date ?? null}
+          />
+        </div>
       )}
 
       {/* Reference Portfolio */}
@@ -437,6 +428,17 @@ export default async function IlasTrackPage({
           />
         </section>
       )}
+
+      {/* Top Movers */}
+      <section aria-labelledby="top-movers-heading" className="mb-12 sm:mb-16">
+        <div className="flex items-center gap-2 mb-6">
+          <TrendingUp className="w-4 h-4 text-zinc-400" />
+          <h2 id="top-movers-heading" className="text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-300">
+            Top Movers — {latestDate}
+          </h2>
+        </div>
+        <IlasTopMovers funds={fundsWithPrices} />
+      </section>
 
       {/* Fund Heatmap */}
       <section aria-labelledby="heatmap-heading" className="mb-12 sm:mb-16">
