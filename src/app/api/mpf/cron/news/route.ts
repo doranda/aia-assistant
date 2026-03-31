@@ -8,7 +8,7 @@ import { getConsecutiveFailures } from "@/lib/mpf/health";
 export const maxDuration = 120;
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
-const MODEL = "google/gemini-2.0-flash";
+const MODEL = "google/gemini-2.5-flash";
 
 function gatewayHeaders() {
   return {
