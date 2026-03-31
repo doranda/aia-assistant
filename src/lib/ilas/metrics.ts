@@ -1,6 +1,7 @@
 // src/lib/ilas/metrics.ts
 // Thin wrapper around MPF's pure math metrics engine.
 // ILAS uses the same Sharpe/Sortino/drawdown formulas — only the expense ratios differ.
+// During bootstrap (< 20 data points), falls back to simplified inline calculations.
 
 import {
   calcAnnualizedReturn,
@@ -33,9 +34,44 @@ export interface IlasMetricsResult {
   momentum_score: number | null;
 }
 
+/** Simple cumulative return for short series */
+function simpleReturn(prices: PricePoint[]): number | null {
+  if (prices.length < 2) return null;
+  const start = prices[0].nav;
+  const end = prices[prices.length - 1].nav;
+  if (start <= 0) return null;
+  return (end / start) - 1;
+}
+
+/** Simple max drawdown for any length >= 2 */
+function simpleMaxDrawdown(prices: PricePoint[]): number | null {
+  if (prices.length < 2) return null;
+  let peak = prices[0].nav;
+  let maxDd = 0;
+  for (const p of prices) {
+    if (p.nav > peak) peak = p.nav;
+    const dd = (p.nav - peak) / peak;
+    if (dd < maxDd) maxDd = dd;
+  }
+  return maxDd;
+}
+
+/** Simple volatility for short series (annualized from daily) */
+function simpleVolatility(prices: PricePoint[]): number | null {
+  if (prices.length < 3) return null;
+  const returns: number[] = [];
+  for (let i = 1; i < prices.length; i++) {
+    returns.push((prices[i].nav - prices[i - 1].nav) / prices[i - 1].nav);
+  }
+  const m = returns.reduce((s, v) => s + v, 0) / returns.length;
+  const variance = returns.reduce((s, v) => s + (v - m) ** 2, 0) / (returns.length - 1);
+  return Math.sqrt(variance) * Math.sqrt(252);
+}
+
 /**
  * Compute all quant metrics for an ILAS fund over a given period.
- * Delegates to the MPF metrics engine (pure math, no MPF coupling).
+ * With >= 20 data points, delegates to the MPF metrics engine.
+ * With 3-19 data points (bootstrap), uses simplified inline calcs.
  */
 export function computeIlasMetrics(
   prices: PricePoint[],
@@ -56,6 +92,26 @@ export function computeIlasMetrics(
     };
   }
 
+  // Bootstrap mode: < 20 data points — use simplified calculations
+  if (sliced.length < 20) {
+    const ret = simpleReturn(sliced);
+    const vol = simpleVolatility(sliced);
+    const sharpe = ret !== null && vol !== null && vol > 0
+      ? (ret - ILAS_RISK_FREE_RATE) / vol
+      : null;
+
+    return {
+      sharpe_ratio: sharpe,
+      sortino_ratio: null, // needs more data for meaningful downside deviation
+      max_drawdown_pct: simpleMaxDrawdown(sliced),
+      annualized_return_pct: ret,
+      annualized_volatility_pct: vol,
+      expense_ratio_pct: expenseRatio ?? DEFAULT_EXPENSE_RATIO,
+      momentum_score: null, // needs 63 days
+    };
+  }
+
+  // Full mode: >= 20 data points — use MPF metrics engine
   return {
     sharpe_ratio: calcSharpeRatio(sliced, ILAS_RISK_FREE_RATE),
     sortino_ratio: calcSortinoRatio(sliced, ILAS_RISK_FREE_RATE),
