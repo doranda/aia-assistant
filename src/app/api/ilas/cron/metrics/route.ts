@@ -34,25 +34,39 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: fundsError?.message }, { status: 500 });
     }
 
+    // Batch-fetch ALL prices in one query (fixes N+1 pattern)
+    const { data: allPrices, error: pricesError } = await supabase
+      .from("ilas_prices")
+      .select("fund_id, date, nav")
+      .order("date", { ascending: true });
+
+    if (pricesError) {
+      console.error("[ilas-metrics] Failed to batch-fetch prices:", pricesError.message);
+      return NextResponse.json({ ok: false, error: pricesError.message }, { status: 500 });
+    }
+
+    // Group prices by fund_id in memory
+    const pricesByFund = new Map<string, { date: string; nav: number }[]>();
+    for (const p of allPrices || []) {
+      if (!pricesByFund.has(p.fund_id)) pricesByFund.set(p.fund_id, []);
+      pricesByFund.get(p.fund_id)!.push({ date: p.date, nav: p.nav });
+    }
+
     let upserted = 0;
     let skipped = 0;
     let errors = 0;
 
-    // TODO: Known N+1 query pattern — each fund triggers a separate prices query (~710 queries at full scale).
-    // Optimization: batch-fetch all prices in one query grouped by fund_id, then compute in-memory.
-    for (const fund of funds) {
-      // Get all prices for this fund
-      const { data: prices, error: pricesErr } = await supabase
-        .from("ilas_prices")
-        .select("date, nav")
-        .eq("fund_id", fund.id)
-        .order("date", { ascending: true });
+    // Collect all upsert rows and batch at the end
+    const upsertRows: {
+      fund_id: string;
+      fund_code: string;
+      period: MetricPeriod;
+      computed_at: string;
+      [key: string]: unknown;
+    }[] = [];
 
-      if (pricesErr) {
-        console.error(`[ilas-metrics] Failed to fetch prices for ${fund.fund_code}:`, pricesErr.message);
-        errors++;
-        continue;
-      }
+    for (const fund of funds) {
+      const prices = pricesByFund.get(fund.id);
 
       if (!prices || prices.length < 3) {
         skipped++;
@@ -70,58 +84,63 @@ export async function GET(req: Request) {
           continue;
         }
 
-        const { error } = await supabase
-          .from("ilas_fund_metrics")
-          .upsert(
-            {
-              fund_id: fund.id,
-              fund_code: fund.fund_code,
-              period,
-              ...metrics,
-              computed_at: new Date().toISOString(),
-            },
-            { onConflict: "fund_id,period" }
-          );
-
-        if (error) {
-          console.error(`[ilas-metrics] ${fund.fund_code}/${period}:`, error.message);
-          errors++;
-        } else {
-          upserted++;
-        }
+        upsertRows.push({
+          fund_id: fund.id,
+          fund_code: fund.fund_code,
+          period,
+          ...metrics,
+          computed_at: new Date().toISOString(),
+        });
       }
     }
 
+    // Batch upsert in chunks of 100
+    const CHUNK = 100;
+    for (let i = 0; i < upsertRows.length; i += CHUNK) {
+      const chunk = upsertRows.slice(i, i + CHUNK);
+      const { error } = await supabase
+        .from("ilas_fund_metrics")
+        .upsert(chunk, { onConflict: "fund_id,period" });
+
+      if (error) {
+        console.error(`[ilas-metrics] Batch upsert chunk ${i}:`, error.message);
+        errors += chunk.length;
+      } else {
+        upserted += chunk.length;
+      }
+    }
+
+    const ms = Date.now() - start;
+
     // Log scraper run
-    const { error: logErr } = await supabase.from("scraper_runs").insert({
+    await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_metrics",
       status: errors === 0 ? "success" : "partial",
       records_processed: upserted,
+      duration_ms: ms,
       error_message: errors > 0 ? `${errors} upsert errors` : null,
     });
-    if (logErr) console.error("[ilas-metrics] Failed to log scraper run:", logErr.message);
+
+    console.log(`[ilas-metrics] Done: ${upserted} upserted, ${skipped} skipped, ${errors} errors in ${ms}ms`);
 
     return NextResponse.json({
-      ok: errors === 0,
+      ok: true,
       funds: funds.length,
       upserted,
       skipped,
       errors,
-      ms: Date.now() - start,
+      ms,
     });
-  } catch (error) {
-    const supabase = createAdminClient();
-    const { error: failLogErr } = await supabase.from("scraper_runs").insert({
-      scraper_name: "ilas_metrics",
-      status: "failed",
-      error_message: error instanceof Error ? error.message : "Unknown error",
-    });
-    if (failLogErr) console.error("[cron/ilas-metrics] Failed to log error run:", failLogErr);
+  } catch (err) {
+    const msg = sanitizeError(err);
+    console.error("[ilas-metrics] Unexpected error:", msg);
+
     await sendDiscordAlert({
-      title: "❌ ILAS Track — Metrics Computation Failed",
-      description: `**Error:** ${sanitizeError(error)}`,
+      title: "❌ ILAS Metrics Cron Failed",
+      description: msg,
       color: COLORS.red,
-    });
-    return NextResponse.json({ error: "Metrics computation failed" }, { status: 500 });
+    }).catch(() => {});
+
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
