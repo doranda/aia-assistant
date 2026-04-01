@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchNews } from "@/lib/mpf/scrapers/news-collector";
 import { evaluateAndRebalance } from "@/lib/mpf/rebalancer";
+import { evaluateAndRebalanceIlas } from "@/lib/ilas/rebalancer";
 import { sendDiscordAlert, sanitizeError, COLORS } from "@/lib/discord";
 import { getConsecutiveFailures } from "@/lib/mpf/health";
 
-export const maxDuration = 120;
+export const maxDuration = 300; // MPF + ILAS (acc + dis) rebalances on high-impact news
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
@@ -103,18 +104,30 @@ export async function GET(req: NextRequest) {
   }
 
   // STEP 3: REBALANCE — only if high-impact news found (saves time on most runs)
+  let ilasRebResult = "skipped";
   if (highImpact > 0) {
+    // MPF rebalance
     try {
       const result = await evaluateAndRebalance(highImpact);
       rebResult = result.rebalanced ? `rebalanced: ${result.reason}` : result.reason;
     } catch (e) { rebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
+
+    // ILAS rebalance — same high-impact news affects ILAS funds too
+    try {
+      const accResult = await evaluateAndRebalanceIlas("accumulation", highImpact);
+      const disResult = await evaluateAndRebalanceIlas("distribution", highImpact);
+      ilasRebResult = [
+        `acc: ${accResult.rebalanced ? "rebalanced" : accResult.reason}`,
+        `dis: ${disResult.rebalanced ? "rebalanced" : disResult.reason}`,
+      ].join("; ");
+    } catch (e) { ilasRebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
   } else {
     rebResult = "skipped — no high-impact news";
   }
 
   const { error: runLogErr } = await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: fetched + classified, duration_ms: Date.now() - t0 });
   if (runLogErr) console.error("[cron/news] Failed to log success run:", runLogErr);
-  return NextResponse.json({ ok: true, fetched, classified, highImpact, rebalance: rebResult, ms: Date.now() - t0 });
+  return NextResponse.json({ ok: true, fetched, classified, highImpact, rebalance: rebResult, ilasRebalance: ilasRebResult, ms: Date.now() - t0 });
   } catch (error) {
     const { error: failLogErr } = await supabase
       .from("scraper_runs")
