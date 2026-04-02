@@ -519,7 +519,7 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
     return { rebalanced: false, reason: "All funds at 0%" };
   }
 
-  // ===== APPLY via T+2 Settlement Pipeline =====
+  // ===== APPLY via T+1 Settlement Pipeline =====
 
   // Check: same allocation = skip
   const proposedAlloc: FundAllocation[] = activePortfolio.map(p => ({ code: p.code, weight: p.weight }));
@@ -606,7 +606,7 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
     };
   }
 
-  // Gate passed — submit switch with T+2 settlement
+  // Gate passed — submit switch with T+1 settlement
   const { orderId, sellDate, settlementDate } = await submitIlasSwitch({
     portfolioType,
     decisionDate: today,

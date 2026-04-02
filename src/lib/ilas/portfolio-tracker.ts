@@ -1,5 +1,5 @@
-// src/lib/ilas/portfolio-tracker.ts — ILAS Portfolio tracking with T+2 settlement
-// Settlement model: Submit T → Sell T+1 NAV → Cash → Buy T+2 NAV (forward pricing)
+// src/lib/ilas/portfolio-tracker.ts — ILAS Portfolio tracking with T+1 settlement
+// Settlement model: Submit T → Sell T+1 NAV (forward pricing, same-day settlement)
 // Dual portfolio: accumulation (growth) + distribution (income) tracked independently
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
@@ -16,7 +16,7 @@ import type { FundAllocation } from "./types";
 
 // ===== ILAS-specific constants =====
 
-const ILAS_SETTLEMENT_DAYS = 2;
+const ILAS_SETTLEMENT_DAYS = 1;
 const ILAS_COOLDOWN_DAYS = 7;
 const ILAS_BASE_NAV = 100.0000;
 const ILAS_LONG_WEEKEND_THRESHOLD_DAYS = 4;
@@ -554,7 +554,7 @@ export async function processIlasSettlements(
     }
 
     if (!allNavsAvailable) {
-      // ILAS prices publish ~1 business day late — only alert after 3+ business days
+      // ILAS prices publish ~1 business day late — alert after 2+ business days overdue
       const blockedHolidays = await loadHKHolidays();
       let bizDaysOverdue = 0;
       let cursor = order.settlement_date;
@@ -564,7 +564,7 @@ export async function processIlasSettlements(
         cursor = next.toISOString().split("T")[0];
         if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
       }
-      if (bizDaysOverdue >= 3) {
+      if (bizDaysOverdue >= 2) {
         await sendDiscordAlert({
           title: "🔴 ILAS Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
           description: `Order ${order.id} (${portfolioType}) cannot settle: missing price for ${order.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA CorpWS source.`,
@@ -694,7 +694,7 @@ export async function processIlasSettlements(
     // Discord notification
     const oldStr = formatIlasAllocation(oldAlloc);
     const newStr = formatIlasAllocation(newAlloc);
-    // Slippage = market movement during cash period (T+1 sell to T+2 buy)
+    // Slippage = market movement during cash period (T+1 settlement)
     // Positive = market went up while we were in cash (we missed gains)
     // Negative = market went down while we were in cash (we dodged losses)
     const slippage =
@@ -703,7 +703,7 @@ export async function processIlasSettlements(
         : "N/A";
 
     await sendDiscordAlert({
-      title: "📊 ILAS Track — Switch Settled (T+2)",
+      title: "📊 ILAS Track — Switch Settled (T+1)",
       description: [
         `**Portfolio:** ${portfolioType}`,
         `**${oldStr}** → **${newStr}**`,

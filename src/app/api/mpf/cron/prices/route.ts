@@ -96,6 +96,12 @@ export async function GET(req: NextRequest) {
         console.log(`[prices-cron] MPFA fallback: ${mpfaCount} records upserted`);
       } catch (mpfaErr) {
         console.error("[prices-cron] MPFA fallback also failed:", mpfaErr);
+        // Both AIA daily AND MPFA fallback failed — alert
+        await sendDiscordAlert({
+          title: "🔴 MPF Care — All Price Sources Failed",
+          description: "AIA daily prices AND MPFA Excel fallback both failed. No new price data ingested. Portfolio NAV cron will use stale prices.",
+          color: COLORS.red,
+        });
       }
     }
 

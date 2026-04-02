@@ -63,6 +63,7 @@ export function TeamManagement({
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("agent");
   const [adding, setAdding] = useState(false);
   const router = useRouter();
@@ -71,7 +72,7 @@ export function TeamManagement({
   const canApprove = canApproveDeletions(currentUserRole);
 
   const handleAddMember = useCallback(async () => {
-    if (!newEmail.trim() || !newName.trim()) return;
+    if (!newEmail.trim() || !newName.trim() || !newPassword.trim()) return;
     setAdding(true);
 
     try {
@@ -81,6 +82,7 @@ export function TeamManagement({
         body: JSON.stringify({
           email: newEmail.trim(),
           full_name: newName.trim(),
+          password: newPassword,
           role: newRole,
         }),
       });
@@ -96,6 +98,7 @@ export function TeamManagement({
       setShowAddDialog(false);
       setNewEmail("");
       setNewName("");
+      setNewPassword("");
       setNewRole("agent");
       router.refresh();
     } catch {
@@ -103,7 +106,7 @@ export function TeamManagement({
     }
 
     setAdding(false);
-  }, [newEmail, newName, newRole, router]);
+  }, [newEmail, newName, newPassword, newRole, router]);
 
   const handleRoleChange = useCallback(
     async (memberId: string, role: UserRole) => {
@@ -380,6 +383,7 @@ export function TeamManagement({
             setShowAddDialog(false);
             setNewEmail("");
             setNewName("");
+            setNewPassword("");
             setNewRole("agent");
           }
         }}
@@ -414,6 +418,17 @@ export function TeamManagement({
             </div>
 
             <div className="space-y-1.5">
+              <Label className="text-xs text-gray-11">Password</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                className="h-9 bg-white/5 border-white/8 text-gray-12 text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <Label className="text-xs text-gray-11">Role</Label>
               <Select
                 value={newRole}
@@ -443,7 +458,7 @@ export function TeamManagement({
               </Button>
               <Button
                 onClick={handleAddMember}
-                disabled={adding || !newEmail.trim() || !newName.trim()}
+                disabled={adding || !newEmail.trim() || !newName.trim() || newPassword.length < 8}
                 className="bg-gradient-to-br from-ruby-9 to-ruby-10 text-white font-bold hover:shadow-[0_0_20px_rgba(196,18,48,0.3)]"
               >
                 {adding ? "Adding..." : "Add Member"}

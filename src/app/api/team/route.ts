@@ -40,11 +40,18 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { email, full_name, role: newRole } = body as { email: string; full_name: string; role: UserRole };
+    const { email, full_name, password, role: newRole } = body as { email: string; full_name: string; password: string; role: UserRole };
 
-    if (!email || !full_name || !newRole) {
+    if (!email || !full_name || !password || !newRole) {
       return NextResponse.json(
-        { error: "email, full_name, and role are required" },
+        { error: "email, full_name, password, and role are required" },
+        { status: 400 }
+      );
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: "Password must be at least 8 characters" },
         { status: 400 }
       );
     }
@@ -61,15 +68,18 @@ export async function POST(request: Request) {
 
     const adminClient = createAdminClient();
 
-    // Invite user by email — Supabase sends an invitation link automatically
+    // Create user directly with password — no email invite needed
     const { data: authData, error: authError } =
-      await adminClient.auth.admin.inviteUserByEmail(email, {
-        data: { full_name },
+      await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name },
       });
 
     if (authError) {
       return NextResponse.json(
-        { error: `Failed to invite user: ${authError.message}` },
+        { error: `Failed to create user: ${authError.message}` },
         { status: 500 }
       );
     }
