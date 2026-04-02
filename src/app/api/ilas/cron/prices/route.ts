@@ -29,6 +29,23 @@ export async function GET(req: Request) {
     // Scrape prices from AIA CorpWS API
     const { prices, errors: scrapeErrors } = await scrapeILASPrices();
 
+    // Detect stale data — check if incoming dates are newer than what's in DB
+    if (prices.length > 0) {
+      const latestIncoming = prices.reduce((max, p) => p.valuation_date > max ? p.valuation_date : max, "");
+      const staleCheckDb = createAdminClient();
+      const { data: latestRow, error: latestErr } = await staleCheckDb
+        .from("ilas_prices").select("date").order("date", { ascending: false }).limit(1).single();
+      if (latestErr) console.error("[cron/ilas-prices] latest date check:", latestErr);
+      const latestInDb = latestRow?.date ?? "";
+      if (latestIncoming && latestInDb && latestIncoming <= latestInDb) {
+        await sendDiscordAlert({
+          title: "ℹ️ ILAS Track — No New Price Data",
+          description: `CorpWS API still returning ${latestIncoming} (same as DB). AIA publication lag — ILAS prices typically arrive ~1 business day late.`,
+          color: COLORS.yellow,
+        });
+      }
+    }
+
     if (prices.length === 0) {
       // Log failed scraper run
       const supabase = createAdminClient();

@@ -554,11 +554,23 @@ export async function processIlasSettlements(
     }
 
     if (!allNavsAvailable) {
-      await sendDiscordAlert({
-        title: "⚠️ ILAS Settlement Blocked — Missing NAV",
-        description: `Order ${order.id} (${portfolioType}) cannot settle: missing price data on ${order.settlement_date}. Will retry tomorrow.`,
-        color: COLORS.yellow,
-      });
+      // ILAS prices publish ~1 business day late — only alert after 3+ business days
+      const blockedHolidays = await loadHKHolidays();
+      let bizDaysOverdue = 0;
+      let cursor = order.settlement_date;
+      while (cursor < today) {
+        const next = new Date(cursor + "T00:00:00Z");
+        next.setUTCDate(next.getUTCDate() + 1);
+        cursor = next.toISOString().split("T")[0];
+        if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
+      }
+      if (bizDaysOverdue >= 3) {
+        await sendDiscordAlert({
+          title: "🔴 ILAS Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
+          description: `Order ${order.id} (${portfolioType}) cannot settle: missing price for ${order.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA CorpWS source.`,
+          color: COLORS.red,
+        });
+      }
       continue;
     }
 
@@ -620,6 +632,45 @@ export async function processIlasSettlements(
     }
 
     settled.push(order.id);
+
+    // Backfill NAV rows from settlement_date+1 through today
+    // (settlement may process days late due to AIA price publication lag)
+    if (order.settlement_date < today) {
+      const backfillHolidays = await loadHKHolidays();
+      let backfillDate = order.settlement_date;
+      let prevNav = navValue;
+      let prevHoldings = newHoldings;
+      while (backfillDate < today) {
+        const next = new Date(backfillDate + "T00:00:00Z");
+        next.setUTCDate(next.getUTCDate() + 1);
+        backfillDate = next.toISOString().split("T")[0];
+        if (!isWorkingDay(backfillDate, backfillHolidays) || backfillDate > today) continue;
+
+        // Compute NAV from holdings × fund NAVs on this date
+        let dayNav = 0;
+        const dayHoldings: FundHolding[] = [];
+        for (const h of prevHoldings) {
+          const fNav = await getClosestNav(h.code, backfillDate);
+          if (!fNav) continue;
+          dayNav += h.units * fNav;
+        }
+        // Compute weights after full sum is known
+        for (const h of prevHoldings) {
+          const fNav = await getClosestNav(h.code, backfillDate);
+          if (fNav && dayNav > 0) {
+            dayHoldings.push({ code: h.code, units: h.units, weight: Math.round(((h.units * fNav) / dayNav) * 100) });
+          }
+        }
+
+        const dayReturn = prevNav > 0 ? ((dayNav - prevNav) / prevNav) * 100 : 0;
+        await supabase.from("ilas_portfolio_nav").upsert(
+          { portfolio_type: portfolioType, date: backfillDate, nav: dayNav, daily_return_pct: dayReturn, holdings: dayHoldings, is_cash: false, is_pretracking: false },
+          { onConflict: "portfolio_type,date" }
+        );
+        prevNav = dayNav;
+        prevHoldings = dayHoldings;
+      }
+    }
 
     // Update sell transaction legs with actual NAVs + units
     const sellHoldings = navRow?.holdings as FundHolding[] | undefined;
@@ -709,10 +760,14 @@ export async function computeAndStoreIlasNav(
     .single();
   if (pendingError) console.error("[ilas-tracker] computeAndStoreIlasNav pendingOrder query:", pendingError);
 
+  // Cash from sell date until settlement actually processes.
+  // ILAS prices publish ~1 business day late, so the order stays "pending"
+  // past its nominal settlement_date — portfolio remains in cash until prices arrive
+  // and processIlasSettlements() settles it. The settle_ilas_switch RPC writes the
+  // authoritative NAV row on the settlement date; the early-return check above prevents
+  // this function from overwriting it.
   const isCashDay =
-    pendingOrder &&
-    targetDate >= pendingOrder.sell_date &&
-    targetDate < pendingOrder.settlement_date;
+    pendingOrder != null && targetDate >= pendingOrder.sell_date;
 
   // Get previous NAV for this portfolio type
   const { data: navRow, error: navError } = await supabase
