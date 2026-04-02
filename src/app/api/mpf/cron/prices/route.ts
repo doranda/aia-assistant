@@ -38,29 +38,34 @@ export async function GET(req: NextRequest) {
   try {
     // STEP 1: Daily NAV prices from AIA getFundPriceList (T+2 business day lag)
     let dailySuccess = false;
+    let isNewData = false;
     try {
       const dailyData = await scrapeAIADailyPrices();
+
+      // Check if this is actually new data vs same date we already have
+      const { data: latestRow, error: latestErr } = await supabase
+        .from("mpf_prices")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .single();
+      if (latestErr) console.error("[prices-cron] latest date check:", latestErr);
+
+      const latestDateInDb = latestRow?.date ?? "";
+      isNewData = dailyData.priceDate > latestDateInDb;
+
       const dailyCount = await upsertDailyPrices(dailyData);
       source = "aia_daily";
       count = dailyCount;
       dailySuccess = true;
-      console.log(`[prices-cron] AIA daily prices: ${dailyCount} funds upserted (date: ${dailyData.priceDate})`);
+      console.log(`[prices-cron] AIA daily prices: ${dailyCount} funds upserted (date: ${dailyData.priceDate}, new: ${isNewData}, prev: ${latestDateInDb})`);
 
-      // Stale source detection — if data is older than T+3 on a weekday
-      const now = new Date();
-      const hkTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Hong_Kong" }));
-      const dayOfWeek = hkTime.getDay(); // 0=Sun, 6=Sat
-      if (dayOfWeek >= 1 && dayOfWeek <= 5 && hkTime.getHours() >= 19) {
-        const threeDaysAgo = new Date(hkTime);
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-        const cutoff = threeDaysAgo.toISOString().split("T")[0];
-        if (dailyData.priceDate && dailyData.priceDate < cutoff) {
-          await sendDiscordAlert({
-            title: "\u26a0\ufe0f MPF Care \u2014 Stale Price Data",
-            description: `AIA daily API returned data from ${dailyData.priceDate} (>3 days old)`,
-            color: COLORS.yellow,
-          });
-        }
+      if (!isNewData && latestDateInDb) {
+        await sendDiscordAlert({
+          title: "ℹ️ MPF Care — No New Price Data",
+          description: `AIA API still returning ${dailyData.priceDate} (same as DB). AIA publication lag — prices typically arrive ~2 business days late.`,
+          color: COLORS.yellow,
+        });
       }
     } catch (dailyErr) {
       console.error("[prices-cron] AIA daily prices failed:", dailyErr);

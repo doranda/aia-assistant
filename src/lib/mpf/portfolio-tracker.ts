@@ -585,11 +585,23 @@ export async function processSettlements(): Promise<{
     }
 
     if (!allNavsAvailable) {
-      await sendDiscordAlert({
-        title: "⚠️ Settlement Blocked — Missing NAV",
-        description: `Switch ${sw.id} cannot settle: missing price data on ${sw.settlement_date}. Will retry tomorrow.`,
-        color: COLORS.yellow,
-      });
+      // AIA publishes prices ~2 business days late — only alert after 4+ business days
+      const blockedHolidays = await loadHKHolidays();
+      let bizDaysOverdue = 0;
+      let cursor = sw.settlement_date;
+      while (cursor < today) {
+        const next = new Date(cursor + "T00:00:00Z");
+        next.setUTCDate(next.getUTCDate() + 1);
+        cursor = next.toISOString().split("T")[0];
+        if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
+      }
+      if (bizDaysOverdue >= 4) {
+        await sendDiscordAlert({
+          title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
+          description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA price source.`,
+          color: COLORS.red,
+        });
+      }
       continue;
     }
 
@@ -643,6 +655,45 @@ export async function processSettlements(): Promise<{
     }
 
     settled.push(sw.id);
+
+    // Backfill NAV rows from settlement_date+1 through today
+    // (settlement may process days late due to AIA price publication lag)
+    if (sw.settlement_date < today) {
+      const backfillHolidays = await loadHKHolidays();
+      let backfillDate = sw.settlement_date;
+      let prevNav = navValue;
+      let prevHoldings = newHoldings;
+      while (backfillDate < today) {
+        const next = new Date(backfillDate + "T00:00:00Z");
+        next.setUTCDate(next.getUTCDate() + 1);
+        backfillDate = next.toISOString().split("T")[0];
+        if (!isWorkingDay(backfillDate, backfillHolidays) || backfillDate > today) continue;
+
+        // Compute NAV from holdings × fund NAVs on this date
+        let dayNav = 0;
+        const dayHoldings: FundHolding[] = [];
+        for (const h of prevHoldings) {
+          const fNav = await getClosestNav(h.code, backfillDate);
+          if (!fNav) continue;
+          dayNav += h.units * fNav;
+          const w = dayNav > 0 ? Math.round(((h.units * fNav) / dayNav) * 100) : h.weight;
+          dayHoldings.push({ code: h.code, units: h.units, weight: w });
+        }
+        // Fix weights after full sum is known
+        for (const dh of dayHoldings) {
+          const fNav = await getClosestNav(dh.code, backfillDate);
+          if (fNav && dayNav > 0) dh.weight = Math.round(((dh.units * fNav) / dayNav) * 100);
+        }
+
+        const dayReturn = prevNav > 0 ? ((dayNav - prevNav) / prevNav) * 100 : 0;
+        await supabase.from("mpf_portfolio_nav").upsert(
+          { date: backfillDate, nav: dayNav, daily_return_pct: dayReturn, holdings: dayHoldings, is_cash: false, is_pretracking: false },
+          { onConflict: "date" }
+        );
+        prevNav = dayNav;
+        prevHoldings = dayHoldings;
+      }
+    }
 
     // Update sell transaction legs with actual NAVs + units
     const sellHoldings = navRow?.holdings as FundHolding[] | undefined;
@@ -720,10 +771,14 @@ export async function computeAndStoreNav(
     .single();
   if (pendingError) console.error("[mpf-tracker] computeAndStoreNav pendingSwitch query:", pendingError);
 
+  // Cash from sell date until settlement actually processes.
+  // AIA publishes prices ~2 business days late, so the switch stays "pending"
+  // past its nominal settlement_date — portfolio remains in cash until prices arrive
+  // and processSettlements() settles it. The settle_switch RPC writes the authoritative
+  // NAV row on the settlement date; the early-return check above (line ~709) prevents
+  // this function from overwriting it.
   const isCashDay =
-    pendingSwitch &&
-    targetDate >= pendingSwitch.sell_date &&
-    targetDate < pendingSwitch.settlement_date;
+    pendingSwitch != null && targetDate >= pendingSwitch.sell_date;
 
   // Get previous NAV
   const { data: navRow, error: navError } = await supabase
