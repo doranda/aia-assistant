@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { MessageSource } from "@/lib/types";
 import { ExternalLink, Loader2 } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
@@ -17,6 +18,7 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ role, content, sources, isStreaming, isFAQ, userQuestion, onSaveAsFAQ }: MessageBubbleProps) {
+  const { t } = useLanguage();
   const [saved, setSaved] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const [loadingSource, setLoadingSource] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#52525B]">
-            You
+            {t("chat.you")}
           </span>
         </div>
         <p className="text-[15px] leading-[1.65] text-[#A1A1AA]">
@@ -62,11 +64,11 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
     <div className="mb-8">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#D71920]">
-          AIA Knowledge
+          {t("chat.aiaKnowledge")}
         </span>
         {isFAQ && (
           <span className="text-[10px] font-semibold uppercase tracking-[0.08em] px-2 py-0.5 rounded-[4px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            FAQ — Instant
+            {t("chat.faqInstant")}
           </span>
         )}
       </div>
@@ -100,10 +102,10 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
             <button
               onClick={() => setSourcesExpanded(!sourcesExpanded)}
               className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#52525B] hover:text-[#A1A1AA] transition-colors"
-              aria-label={sourcesExpanded ? "Hide sources" : "Show sources"}
+              aria-label={sourcesExpanded ? t("chat.hideSources") : t("chat.showSources")}
               aria-expanded={sourcesExpanded}
             >
-              <span>{sources.length} source{sources.length > 1 ? "s" : ""}</span>
+              <span>{sources.length} {t("chat.sources")}{sources.length > 1 ? "s" : ""}</span>
               <svg
                 width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
                 className={`transition-transform ${sourcesExpanded ? "rotate-180" : ""}`}
@@ -140,7 +142,7 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
                           p.{source.page_number}
                           {source.relevance_score != null && (
                             <span className="ml-2 text-[#D71920]/70">
-                              {Math.round(source.relevance_score * 100)}% match
+                              {Math.round(source.relevance_score * 100)}% {t("chat.match")}
                             </span>
                           )}
                         </p>
@@ -180,7 +182,7 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
                 </svg>
-                Saved as FAQ
+                {t("chat.savedAsFaq")}
               </>
             ) : (
               <>
@@ -188,7 +190,7 @@ export function MessageBubble({ role, content, sources, isStreaming, isFAQ, user
                   <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
                   <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
                 </svg>
-                Save as FAQ
+                {t("chat.saveAsFaq")}
               </>
             )}
           </button>

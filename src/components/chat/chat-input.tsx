@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useLanguage } from "@/lib/i18n";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -8,6 +9,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
+  const { t } = useLanguage();
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -42,7 +44,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           value={value}
           onChange={(e) => { setValue(e.target.value); handleInput(); }}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about products, underwriting, claims, or compliance…"
+          placeholder={t("chat.inputPlaceholder")}
           disabled={disabled}
           rows={1}
           className="w-full px-5 py-4 rounded-[8px] border border-white/[0.08] bg-[#18181B] text-[15px] text-[#FAFAFA] font-sans placeholder:text-[#52525B] outline-none resize-none transition-all focus:border-[#D71920]/40 focus:shadow-[0_0_0_3px_rgba(215,25,32,0.08)] min-h-[52px]"
@@ -52,10 +54,10 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             {disabled ? (
               <span className="flex items-center gap-2">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#D71920] animate-pulse" />
-                Searching documents &amp; generating response…
+                {t("chat.searchingDocs")}
               </span>
             ) : (
-              "↵ Send · Shift+↵ New line · Sources cited inline"
+              t("chat.inputHelp")
             )}
           </span>
           <button
@@ -63,7 +65,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             disabled={!value.trim() || disabled}
             className="text-[13px] text-white font-semibold px-5 py-2 rounded-[6px] bg-[#D71920] hover:bg-[#B51218] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {disabled ? "Thinking…" : "Send"}
+            {disabled ? t("chat.thinking") : t("chat.send")}
           </button>
         </div>
       </div>

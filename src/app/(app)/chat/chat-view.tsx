@@ -7,6 +7,7 @@ import { ConversationDrawer } from "@/components/chat/conversation-drawer";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { ChatInput } from "@/components/chat/chat-input";
 import { createClient } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/i18n";
 
 interface ChatViewProps {
   conversations: Conversation[];
@@ -14,6 +15,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ conversations, initialConversationId }: ChatViewProps) {
+  const { t } = useLanguage();
   const [activeConvId, setActiveConvId] = useState<string | null>(initialConversationId || null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
@@ -22,16 +24,12 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
   const [isFAQResponse, setIsFAQResponse] = useState(false);
   const [convList, setConvList] = useState(conversations);
   const [language, setLanguage] = useState<"auto" | "en" | "zh">("auto");
-  const [suggestions, setSuggestions] = useState<string[]>([
-    "What plans do we offer?",
-    "How do I submit a claim?",
-    "What are the exclusion clauses?",
-    "Compare our medical plans",
-  ]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skipNextLoad = useRef(false);
 
   useEffect(() => {
+    setSuggestions([t("chat.suggestion1"), t("chat.suggestion2"), t("chat.suggestion3"), t("chat.suggestion4")]);
     fetch("/api/popular-queries")
       .then((r) => r.json())
       .then((data) => {
@@ -40,7 +38,7 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
         }
       })
       .catch((e) => console.error("[chat] popular queries fetch:", e));
-  }, []);
+  }, [t]);
 
   const loadMessages = useCallback(async (convId: string) => {
     const supabase = createClient();
@@ -235,10 +233,10 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
           {messages.length === 0 && !streamingContent && (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <h2 className="text-[clamp(1.5rem,3vw,2.25rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.1] mb-3">
-                Ask anything
+                {t("chat.heading")}
               </h2>
               <p className="text-sm text-zinc-500 max-w-sm mb-6">
-                Search across your uploaded insurance documents. Answers include source citations.
+                {t("chat.subtitle")}
               </p>
               <div className="flex flex-wrap justify-center gap-2 max-w-lg">
                 {suggestions.map((q) => (
@@ -270,13 +268,13 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
           {isStreaming && !streamingContent && (
             <div className="mb-10">
               <div className="text-[12px] font-bold uppercase tracking-[0.08em] text-gray-7 mb-2.5">
-                Knowledge Hub
+                {t("chat.knowledgeHub")}
               </div>
               <div className="flex items-center gap-1.5 py-2">
                 <span className="w-2 h-2 rounded-full bg-ruby-10 animate-[bounce_1.4s_ease-in-out_infinite]" />
                 <span className="w-2 h-2 rounded-full bg-ruby-10 animate-[bounce_1.4s_ease-in-out_0.2s_infinite]" />
                 <span className="w-2 h-2 rounded-full bg-ruby-10 animate-[bounce_1.4s_ease-in-out_0.4s_infinite]" />
-                <span className="text-sm text-gray-8 ml-2">Searching documents...</span>
+                <span className="text-sm text-gray-8 ml-2">{t("chat.searching")}</span>
               </div>
             </div>
           )}
@@ -295,7 +293,7 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
         </div>
 
         <div className="flex items-center gap-2 px-1 mb-1">
-          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-7">Reply in</span>
+          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-gray-7">{t("chat.replyIn")}</span>
           {(["auto", "en", "zh"] as const).map((lang) => (
             <button
               key={lang}
@@ -306,7 +304,7 @@ export function ChatView({ conversations, initialConversationId }: ChatViewProps
                   : "text-gray-8 hover:text-gray-11"
               }`}
             >
-              {lang === "auto" ? "Auto" : lang === "en" ? "English" : "中文"}
+              {lang === "auto" ? t("chat.auto") : lang === "en" ? t("chat.english") : t("chat.chinese")}
             </button>
           ))}
         </div>
