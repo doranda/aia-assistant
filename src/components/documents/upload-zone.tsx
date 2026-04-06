@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useLanguage } from "@/lib/i18n";
 import {
   Dialog,
   DialogContent,
@@ -22,19 +23,6 @@ import {
 import { parseFilename } from "@/lib/parse-filename";
 import type { DocumentCategory } from "@/lib/types";
 
-const categories: { label: string; value: DocumentCategory }[] = [
-  { label: "Launchpad", value: "launchpad" },
-  { label: "Memo", value: "memo" },
-  { label: "Knowledge", value: "knowledge" },
-  { label: "Promotions", value: "promotions" },
-  { label: "Premium Table", value: "premium_table" },
-  { label: "Comparison", value: "comparison" },
-  { label: "Email Attachment", value: "email_attachment" },
-  { label: "Underwriting Guideline", value: "underwriting_guideline" },
-  { label: "Claim Guideline", value: "claim_guideline" },
-  { label: "Other", value: "other" },
-];
-
 interface PendingFile {
   file: File;
   title: string;
@@ -48,6 +36,21 @@ interface UploadZoneProps {
 }
 
 export function UploadZone({ compact }: UploadZoneProps) {
+  const { t } = useLanguage();
+
+  const categories: { label: string; value: DocumentCategory }[] = [
+    { label: t("documents.launchpad"), value: "launchpad" },
+    { label: t("documents.memo"), value: "memo" },
+    { label: t("documents.knowledge"), value: "knowledge" },
+    { label: t("documents.promotions"), value: "promotions" },
+    { label: t("documents.premiumTable"), value: "premium_table" },
+    { label: t("documents.comparison"), value: "comparison" },
+    { label: t("documents.emailAttachment"), value: "email_attachment" },
+    { label: t("documents.uwGuideline"), value: "underwriting_guideline" },
+    { label: t("documents.claimGuideline"), value: "claim_guideline" },
+    { label: t("documents.other"), value: "other" },
+  ];
+
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -57,7 +60,7 @@ export function UploadZone({ compact }: UploadZoneProps) {
   const handleFiles = useCallback((files: FileList | File[]) => {
     const pdfFiles = Array.from(files).filter((f) => f.type === "application/pdf");
     if (pdfFiles.length === 0) {
-      toast.error("Only PDF files are supported");
+      toast.error(t("documents.onlyPdf"));
       return;
     }
 
@@ -135,7 +138,7 @@ export function UploadZone({ compact }: UploadZoneProps) {
         <label className="block cursor-pointer">
           {fileInput}
           <span className="text-xs text-white font-bold px-4 lg:px-5 py-2 rounded-full bg-gradient-to-br from-ruby-9 to-ruby-10 shadow-[0_0_20px_rgba(196,18,48,0.2)] hover:shadow-[0_0_30px_rgba(196,18,48,0.35)] hover:-translate-y-px active:translate-y-px active:scale-[0.96] transition-all inline-block">
-            Upload PDF
+            {t("documents.uploadPdf")}
           </span>
         </label>
       ) : (
@@ -155,8 +158,8 @@ export function UploadZone({ compact }: UploadZoneProps) {
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
-          <p className="text-gray-9 text-base font-medium mt-4">Drop PDFs here or click to browse</p>
-          <p className="text-gray-7 text-sm mt-1.5">Max 50MB · 200 pages · PDF only</p>
+          <p className="text-gray-9 text-base font-medium mt-4">{t("documents.dropPrompt")}</p>
+          <p className="text-gray-7 text-sm mt-1.5">{t("documents.maxSize")}</p>
         </label>
       )}
 
@@ -179,7 +182,7 @@ export function UploadZone({ compact }: UploadZoneProps) {
 
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-gray-11">Title</Label>
+                    <Label className="text-xs text-gray-11">{t("documents.title")}</Label>
                     <Input
                       value={pf.title}
                       onChange={(e) => updatePending(i, { title: e.target.value })}
@@ -189,7 +192,7 @@ export function UploadZone({ compact }: UploadZoneProps) {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-gray-11">Category</Label>
+                      <Label className="text-xs text-gray-11">{t("documents.category")}</Label>
                       <Select
                         value={pf.category}
                         onValueChange={(v) => updatePending(i, { category: v as DocumentCategory })}
@@ -206,22 +209,22 @@ export function UploadZone({ compact }: UploadZoneProps) {
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-gray-11">Company {pf.company && <span className="text-ruby-11">(auto-detected)</span>}</Label>
+                      <Label className="text-xs text-gray-11">{t("documents.company")} {pf.company && <span className="text-ruby-11">{t("documents.autoDetected")}</span>}</Label>
                       <Input
                         value={pf.company}
                         onChange={(e) => updatePending(i, { company: e.target.value })}
-                        placeholder="e.g. AIA, FWD"
+                        placeholder={t("documents.companyPlaceholder")}
                         className="h-9 bg-white/5 border-white/8 text-gray-12 text-sm placeholder:text-gray-8"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-gray-11">Tags {pf.tags && <span className="text-ruby-11">(auto-detected)</span>}</Label>
+                    <Label className="text-xs text-gray-11">{t("documents.tags")} {pf.tags && <span className="text-ruby-11">{t("documents.autoDetected")}</span>}</Label>
                     <Input
                       value={pf.tags}
                       onChange={(e) => updatePending(i, { tags: e.target.value })}
-                      placeholder="VHIS, health, CI (comma separated)"
+                      placeholder={t("documents.tagsPlaceholder")}
                       className="h-9 bg-white/5 border-white/8 text-gray-12 text-sm placeholder:text-gray-8"
                     />
                   </div>
@@ -236,14 +239,14 @@ export function UploadZone({ compact }: UploadZoneProps) {
                 disabled={uploading}
                 className="text-gray-9 hover:text-gray-12"
               >
-                Cancel
+                {t("documents.cancel")}
               </Button>
               <Button
                 onClick={handleUpload}
                 disabled={uploading || pendingFiles.some((pf) => !pf.title.trim())}
                 className="bg-gradient-to-br from-ruby-9 to-ruby-10 text-white font-bold hover:shadow-[0_0_20px_rgba(196,18,48,0.3)]"
               >
-                {uploading ? "Uploading..." : `Upload ${pendingFiles.length === 1 ? "" : `${pendingFiles.length} files`}`}
+                {uploading ? t("documents.uploading") : `Upload ${pendingFiles.length === 1 ? "" : `${pendingFiles.length} files`}`}
               </Button>
             </div>
           </div>

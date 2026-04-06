@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useLanguage } from "@/lib/i18n";
 import type { Document, DocumentCategory, UserRole } from "@/lib/types";
 import { DocumentFilters } from "@/components/documents/document-filters";
 import { DocumentTable } from "@/components/documents/document-table";
@@ -11,6 +12,7 @@ import { UploadZone } from "@/components/documents/upload-zone";
 import { EditDocumentDialog } from "@/components/documents/edit-document-dialog";
 
 export function DocumentsView({ documents, userRole }: { documents: Document[]; userRole?: UserRole }) {
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<DocumentCategory | "all">("all");
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [ingesting, setIngesting] = useState(false);
@@ -85,7 +87,7 @@ export function DocumentsView({ documents, userRole }: { documents: Document[]; 
     <main className="max-w-[980px] mx-auto px-6 pt-16 lg:pt-24 pb-24">
       <div className="flex items-baseline justify-between mb-10 lg:mb-14">
         <h1 className="text-3xl lg:text-[40px] font-extrabold tracking-tight bg-gradient-to-b from-[#f5f5f7] to-white/70 bg-clip-text text-transparent">
-          Documents
+          {t("documents.heading")}
         </h1>
         <div className="flex gap-2">
           {pendingCount > 0 && (
@@ -97,7 +99,7 @@ export function DocumentsView({ documents, userRole }: { documents: Document[]; 
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 12a9 9 0 1 1-6.2-8.6" /><path d="M21 3v9h-9" />
               </svg>
-              {ingesting ? "Indexing..." : `Index ${pendingCount} pending`}
+              {ingesting ? t("documents.indexing") : `Index ${pendingCount} ${t("documents.indexPending")}`}
             </button>
           )}
           <button
@@ -108,7 +110,7 @@ export function DocumentsView({ documents, userRole }: { documents: Document[]; 
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 12a9 9 0 1 1-6.2-8.6" /><path d="M21 3v9h-9" />
             </svg>
-            {ingesting ? "Rebuilding..." : "Rebuild all"}
+            {ingesting ? t("documents.rebuilding") : t("documents.rebuildAll")}
           </button>
           <UploadZone compact />
         </div>
@@ -127,7 +129,7 @@ export function DocumentsView({ documents, userRole }: { documents: Document[]; 
       <DocumentTable documents={filtered} onEdit={setEditingDoc} onIngest={handleIngestSingle} ingestingId={ingestingId} userRole={userRole} />
       <div className="lg:hidden">
         {filtered.length === 0 ? (
-          <div className="text-center py-16"><p className="text-gray-8 text-sm">No documents found</p></div>
+          <div className="text-center py-16"><p className="text-gray-8 text-sm">{t("documents.noDocuments")}</p></div>
         ) : (
           filtered.map((doc) => (
             <DocumentCard key={doc.id} document={doc} onEdit={setEditingDoc} onIngest={handleIngestSingle} ingestingId={ingestingId} />

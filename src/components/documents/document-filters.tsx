@@ -2,20 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import type { DocumentCategory } from "@/lib/types";
-
-const filters: { label: string; value: DocumentCategory | "all" }[] = [
-  { label: "All", value: "all" },
-  { label: "Launchpad", value: "launchpad" },
-  { label: "Memo", value: "memo" },
-  { label: "Knowledge", value: "knowledge" },
-  { label: "Promotions", value: "promotions" },
-  { label: "Premium Tables", value: "premium_table" },
-  { label: "Comparisons", value: "comparison" },
-  { label: "UW Guidelines", value: "underwriting_guideline" },
-  { label: "Claim Guidelines", value: "claim_guideline" },
-  { label: "Email", value: "email_attachment" },
-  { label: "Other", value: "other" },
-];
+import { useLanguage } from "@/lib/i18n";
 
 interface DocumentFiltersProps {
   activeFilter: DocumentCategory | "all";
@@ -23,6 +10,22 @@ interface DocumentFiltersProps {
 }
 
 export function DocumentFilters({ activeFilter, onFilterChange }: DocumentFiltersProps) {
+  const { t } = useLanguage();
+
+  const filters: { label: string; value: DocumentCategory | "all" }[] = [
+    { label: t("documents.all"), value: "all" },
+    { label: t("documents.launchpad"), value: "launchpad" },
+    { label: t("documents.memo"), value: "memo" },
+    { label: t("documents.knowledge"), value: "knowledge" },
+    { label: t("documents.promotions"), value: "promotions" },
+    { label: t("documents.premiumTables"), value: "premium_table" },
+    { label: t("documents.comparisons"), value: "comparison" },
+    { label: t("documents.uwGuidelines"), value: "underwriting_guideline" },
+    { label: t("documents.claimGuidelines"), value: "claim_guideline" },
+    { label: t("documents.email"), value: "email_attachment" },
+    { label: t("documents.other"), value: "other" },
+  ];
+
   return (
     <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-none">
       {filters.map((filter) => (
