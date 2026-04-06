@@ -7,6 +7,7 @@ import { isSafeRedirect } from "@/lib/safe-redirect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useLanguage } from "@/lib/i18n";
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -15,6 +16,7 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
   const redirectTo = searchParams.get("redirect");
   const destination = isSafeRedirect(redirectTo) ? redirectTo : "/dashboard";
 
@@ -43,12 +45,12 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
         <Label htmlFor="email" className="text-sm font-medium text-gray-11">
-          Email
+          {t("login.email")}
         </Label>
         <Input
           id="email"
           type="email"
-          placeholder="you@example.com"
+          placeholder={t("login.emailPlaceholder")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -58,7 +60,7 @@ export function LoginForm() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password" className="text-sm font-medium text-gray-11">
-          Password
+          {t("login.password")}
         </Label>
         <Input
           id="password"
@@ -82,7 +84,7 @@ export function LoginForm() {
         disabled={loading}
         className="w-full h-12 rounded-full bg-gradient-to-br from-ruby-9 to-ruby-10 hover:shadow-[0_0_30px_rgba(196,18,48,0.35)] text-white font-bold transition-all"
       >
-        {loading ? "Signing in..." : "Sign in"}
+        {loading ? t("login.signingIn") : t("login.signIn")}
       </Button>
     </form>
   );
