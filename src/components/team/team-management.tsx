@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { canManageTeam, canChangeRoles, canApproveDeletions } from "@/lib/permissions";
 import type { UserRole, DeleteRequest } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
 
 interface TeamMember {
   id: string;
@@ -58,6 +59,7 @@ export function TeamManagement({
   initialMembers,
   initialDeleteRequests,
 }: TeamManagementProps) {
+  const { t } = useLanguage();
   const [members, setMembers] = useState(initialMembers);
   const [deleteRequests, setDeleteRequests] = useState(initialDeleteRequests);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -89,7 +91,7 @@ export function TeamManagement({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to add member");
+        toast.error(data.error || t("team.failedAdd"));
         setAdding(false);
         return;
       }
@@ -102,11 +104,11 @@ export function TeamManagement({
       setNewRole("agent");
       router.refresh();
     } catch {
-      toast.error("Failed to add member");
+      toast.error(t("team.failedAdd"));
     }
 
     setAdding(false);
-  }, [newEmail, newName, newPassword, newRole, router]);
+  }, [newEmail, newName, newPassword, newRole, router, t]);
 
   const handleRoleChange = useCallback(
     async (memberId: string, role: UserRole) => {
@@ -119,19 +121,19 @@ export function TeamManagement({
 
         if (!res.ok) {
           const data = await res.json();
-          toast.error(data.error || "Failed to update role");
+          toast.error(data.error || t("team.failedUpdateRole"));
           return;
         }
 
         setMembers((prev) =>
           prev.map((m) => (m.id === memberId ? { ...m, role } : m))
         );
-        toast.success("Role updated");
+        toast.success(t("team.roleUpdated"));
       } catch {
-        toast.error("Failed to update role");
+        toast.error(t("team.failedUpdateRole"));
       }
     },
-    []
+    [t]
   );
 
   const handleToggleActive = useCallback(
@@ -145,7 +147,7 @@ export function TeamManagement({
 
         if (!res.ok) {
           const data = await res.json();
-          toast.error(data.error || "Failed to update");
+          toast.error(data.error || t("team.failedUpdate"));
           return;
         }
 
@@ -153,10 +155,10 @@ export function TeamManagement({
           prev.map((m) => (m.id === memberId ? { ...m, is_active } : m))
         );
       } catch {
-        toast.error("Failed to update");
+        toast.error(t("team.failedUpdate"));
       }
     },
-    []
+    [t]
   );
 
   const handleDeleteAction = useCallback(
@@ -175,13 +177,13 @@ export function TeamManagement({
         }
 
         setDeleteRequests((prev) => prev.filter((r) => r.id !== requestId));
-        toast.success(action === "approve" ? "Document deleted" : "Request rejected");
+        toast.success(action === "approve" ? t("team.documentDeleted") : t("team.requestRejected"));
         if (action === "approve") router.refresh();
       } catch {
         toast.error(`Failed to ${action}`);
       }
     },
-    [router]
+    [router, t]
   );
 
   return (
@@ -189,7 +191,7 @@ export function TeamManagement({
       <div className="flex items-center justify-between mb-12">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-b from-[#f5f5f7] to-white/70 bg-clip-text text-transparent">
-            Team
+            {t("team.heading")}
           </h1>
           <p className="text-gray-8 text-sm mt-2">
             {members.length} member{members.length !== 1 ? "s" : ""}
@@ -200,7 +202,7 @@ export function TeamManagement({
             onClick={() => setShowAddDialog(true)}
             className="text-xs text-white font-bold px-4 lg:px-5 py-2 rounded-full bg-gradient-to-br from-ruby-9 to-ruby-10 shadow-[0_0_20px_rgba(196,18,48,0.2)] hover:shadow-[0_0_30px_rgba(196,18,48,0.35)] hover:-translate-y-px active:translate-y-px active:scale-[0.96] transition-all"
           >
-            Add Member
+            {t("team.addMember")}
           </button>
         )}
       </div>
@@ -209,7 +211,7 @@ export function TeamManagement({
       {canApprove && deleteRequests.length > 0 && (
         <div className="mb-10">
           <h2 className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-400 mb-4">
-            Pending Delete Requests ({deleteRequests.length})
+            {t("team.pendingDeletes")} ({deleteRequests.length})
           </h2>
           <div className="space-y-2">
             {deleteRequests.map((req) => (
@@ -222,11 +224,11 @@ export function TeamManagement({
                     {req.documents?.title || "Unknown document"}
                   </span>
                   <span className="text-[12px] text-gray-8 ml-2">
-                    requested by {req.requester?.full_name || "Unknown"}
+                    {t("team.requestedBy")} {req.requester?.full_name || "Unknown"}
                   </span>
                   {req.reason && (
                     <p className="text-[12px] text-gray-7 mt-0.5">
-                      Reason: {req.reason}
+                      {t("team.reason")} {req.reason}
                     </p>
                   )}
                 </div>
@@ -235,13 +237,13 @@ export function TeamManagement({
                     onClick={() => handleDeleteAction(req.id, "approve")}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-ruby-9/10 text-ruby-11 border border-ruby-9/20 hover:bg-ruby-9/20 transition-colors min-h-[44px]"
                   >
-                    Approve
+                    {t("team.approve")}
                   </button>
                   <button
                     onClick={() => handleDeleteAction(req.id, "reject")}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-white/[0.04] text-gray-9 border border-white/[0.06] hover:bg-white/[0.08] transition-colors min-h-[44px]"
                   >
-                    Reject
+                    {t("team.reject")}
                   </button>
                 </div>
               </div>
@@ -277,7 +279,7 @@ export function TeamManagement({
                   </span>
                   {isMe && (
                     <span className="text-[10px] font-bold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded-full bg-white/[0.06] text-gray-9">
-                      You
+                      {t("team.you")}
                     </span>
                   )}
 
@@ -329,7 +331,7 @@ export function TeamManagement({
                     {member.conversations}
                   </div>
                   <div className="text-[10px] text-gray-7 uppercase tracking-wider">
-                    Chats
+                    {t("team.chats")}
                   </div>
                 </div>
                 <div>
@@ -337,7 +339,7 @@ export function TeamManagement({
                     {member.documents}
                   </div>
                   <div className="text-[10px] text-gray-7 uppercase tracking-wider">
-                    Docs
+                    {t("team.docs")}
                   </div>
                 </div>
               </div>
@@ -357,7 +359,7 @@ export function TeamManagement({
                     <div
                       className={`w-1.5 h-1.5 rounded-full ${member.is_active ? "bg-[#30d158]" : "bg-gray-7"}`}
                     />
-                    {member.is_active ? "Active" : "Inactive"}
+                    {member.is_active ? t("team.active") : t("team.inactive")}
                   </button>
                 ) : (
                   <div className="flex items-center gap-1.5">
@@ -365,7 +367,7 @@ export function TeamManagement({
                       className={`w-1.5 h-1.5 rounded-full ${member.is_active ? "bg-[#30d158]" : "bg-gray-7"}`}
                     />
                     <span className="text-[11px] text-gray-8">
-                      {member.is_active ? "Active" : "Inactive"}
+                      {member.is_active ? t("team.active") : t("team.inactive")}
                     </span>
                   </div>
                 )}
@@ -391,45 +393,45 @@ export function TeamManagement({
         <DialogContent className="bg-gray-2 border-white/[0.06] text-gray-12 max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold">
-              Add Team Member
+              {t("team.addTeamMember")}
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-11">Email</Label>
+              <Label className="text-xs text-gray-11">{t("team.email")}</Label>
               <Input
                 type="email"
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="name@company.com"
+                placeholder={t("team.emailPlaceholder")}
                 className="h-9 bg-white/5 border-white/8 text-gray-12 text-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-11">Full Name</Label>
+              <Label className="text-xs text-gray-11">{t("team.fullName")}</Label>
               <Input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="John Smith"
+                placeholder={t("team.namePlaceholder")}
                 className="h-9 bg-white/5 border-white/8 text-gray-12 text-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-11">Password</Label>
+              <Label className="text-xs text-gray-11">{t("team.password")}</Label>
               <Input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 8 characters"
+                placeholder={t("team.minPassword")}
                 className="h-9 bg-white/5 border-white/8 text-gray-12 text-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-11">Role</Label>
+              <Label className="text-xs text-gray-11">{t("team.role")}</Label>
               <Select
                 value={newRole}
                 onValueChange={(v) => setNewRole(v as UserRole)}
@@ -454,14 +456,14 @@ export function TeamManagement({
                 disabled={adding}
                 className="text-gray-9 hover:text-gray-12"
               >
-                Cancel
+                {t("team.cancel")}
               </Button>
               <Button
                 onClick={handleAddMember}
                 disabled={adding || !newEmail.trim() || !newName.trim() || newPassword.length < 8}
                 className="bg-gradient-to-br from-ruby-9 to-ruby-10 text-white font-bold hover:shadow-[0_0_20px_rgba(196,18,48,0.3)]"
               >
-                {adding ? "Adding..." : "Add Member"}
+                {adding ? t("team.adding") : t("team.addMember")}
               </Button>
             </div>
           </div>

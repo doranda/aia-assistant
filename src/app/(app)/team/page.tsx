@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { canApproveDeletions } from "@/lib/permissions";
 import { TeamManagement } from "@/components/team/team-management";
+import { TeamSignInRequired } from "@/components/team/team-sign-in-required";
 import type { UserRole } from "@/lib/types";
 
 async function getTeamData() {
@@ -85,11 +86,7 @@ export default async function TeamPage() {
   const data = await getTeamData();
 
   if (!data) {
-    return (
-      <div className="max-w-[980px] mx-auto px-6 py-16">
-        <p className="text-gray-8">Please sign in to view the team.</p>
-      </div>
-    );
+    return <TeamSignInRequired />;
   }
 
   return (
