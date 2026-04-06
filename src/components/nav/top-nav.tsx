@@ -3,21 +3,23 @@
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/lib/i18n";
 import { LayoutDashboard, MessageSquare, BarChart3, FileText, BookOpen, Users, TrendingUp } from "lucide-react";
-
-const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "MPF Care", href: "/mpf-care", icon: TrendingUp },
-  { label: "ILAS Track", href: "/ilas-track", icon: BarChart3 },
-  { label: "Chat", href: "/chat", icon: MessageSquare },
-  { label: "Documents", href: "/documents", icon: FileText },
-  { label: "FAQs", href: "/faqs", icon: BookOpen },
-  { label: "Team", href: "/team", icon: Users },
-];
 
 export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { userInitials: string; pendingCount?: number; mpfAlertCount?: number }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { locale, setLocale, t } = useLanguage();
+
+  const navItemDefs = [
+    { labelKey: "nav.dashboard" as const, href: "/dashboard", icon: LayoutDashboard },
+    { labelKey: "nav.mpfCare" as const, href: "/mpf-care", icon: TrendingUp },
+    { labelKey: "nav.ilasTrack" as const, href: "/ilas-track", icon: BarChart3 },
+    { labelKey: "nav.chat" as const, href: "/chat", icon: MessageSquare },
+    { labelKey: "nav.documents" as const, href: "/documents", icon: FileText },
+    { labelKey: "nav.faqs" as const, href: "/faqs", icon: BookOpen },
+    { labelKey: "nav.team" as const, href: "/team", icon: Users },
+  ];
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -32,12 +34,12 @@ export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { 
         <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2.5 cursor-pointer">
           <div className="w-5 h-5 rounded-[5px] bg-[#D71920]" />
           <span className="text-[13px] font-semibold text-zinc-50 tracking-[-0.01em]">
-            Knowledge Hub
+            {t("nav.knowledgeHub")}
           </span>
         </button>
 
         <div className="flex gap-0.5" role="tablist">
-          {navItems.map((item) => {
+          {navItemDefs.map((item) => {
             const Icon = item.icon;
             const isActive = pathname.startsWith(item.href);
             return (
@@ -54,11 +56,11 @@ export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { 
                 )}
               >
                 <Icon className="w-3.5 h-3.5" />
-                {item.label}
-                {item.label === "Team" && pendingCount > 0 && (
+                {t(item.labelKey)}
+                {item.labelKey === "nav.team" && pendingCount > 0 && (
                   <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-amber-500" />
                 )}
-                {item.label === "MPF Care" && mpfAlertCount > 0 && (
+                {item.labelKey === "nav.mpfCare" && mpfAlertCount > 0 && (
                   <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 )}
               </button>
@@ -68,11 +70,18 @@ export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { 
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-label="System online" />
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-label={t("nav.systemOnline")} />
+        <button
+          onClick={() => setLocale(locale === "en" ? "zh" : "en")}
+          className="px-2 py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 rounded border border-zinc-700 hover:border-zinc-600 transition-colors cursor-pointer"
+          aria-label={t("lang.label")}
+        >
+          {locale === "en" ? "中文" : "EN"}
+        </button>
         <button
           onClick={handleSignOut}
           className="w-10 h-10 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] font-semibold text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors cursor-pointer"
-          aria-label="Sign out"
+          aria-label={t("nav.signOut")}
         >
           {userInitials}
         </button>

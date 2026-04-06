@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { canApproveDeletions } from "@/lib/permissions";
 import { TopNav } from "@/components/nav/top-nav";
 import { MobileNav } from "@/components/nav/mobile-nav";
+import { LanguageProvider } from "@/lib/i18n";
 import type { UserRole } from "@/lib/types";
 
 export default async function AppLayout({
@@ -54,7 +55,7 @@ export default async function AppLayout({
   if (scraperError) console.error("[layout] Failed to fetch scraper runs:", scraperError);
 
   return (
-    <>
+    <LanguageProvider>
       <TopNav
         userInitials={initials || "?"}
         pendingCount={pendingCount}
@@ -62,6 +63,6 @@ export default async function AppLayout({
       />
       <div className="pt-12 pb-20 lg:pb-0 min-h-dvh">{children}</div>
       <MobileNav />
-    </>
+    </LanguageProvider>
   );
 }
