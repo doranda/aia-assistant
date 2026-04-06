@@ -1,6 +1,9 @@
+"use client";
+
 // Shared banner: shows "Prices as of [date]" with a warning if data is stale (>3 business days)
 import { cn } from "@/lib/utils";
 import { Clock, AlertTriangle } from "lucide-react";
+import { useLanguage } from "@/lib/i18n";
 
 interface PriceFreshnessBannerProps {
   priceDate: string; // ISO date string e.g. "2026-03-27"
@@ -21,6 +24,8 @@ function businessDaysBetween(from: Date, to: Date): number {
 }
 
 export function PriceFreshnessBanner({ priceDate, label }: PriceFreshnessBannerProps) {
+  const { t } = useLanguage();
+
   const priceD = new Date(priceDate + "T00:00:00");
   const now = new Date();
   const today = new Date(now.toISOString().split("T")[0] + "T00:00:00");
@@ -33,6 +38,8 @@ export function PriceFreshnessBanner({ priceDate, label }: PriceFreshnessBannerP
     month: "short",
     day: "numeric",
   });
+
+  const pricesLabel = label ? `${label} ${t("shared.prices").toLowerCase()}` : t("shared.prices");
 
   return (
     <div
@@ -50,10 +57,10 @@ export function PriceFreshnessBanner({ priceDate, label }: PriceFreshnessBannerP
         <Clock className="w-3.5 h-3.5 shrink-0" />
       )}
       <span>
-        {label ? `${label} prices` : "Prices"} as of <strong className="text-zinc-200">{formattedDate}</strong>
+        {pricesLabel} {t("shared.asOf")} <strong className="text-zinc-200">{formattedDate}</strong>
         {isStale
-          ? ` — ${staleDays} business days old. AIA data may be delayed or cron may have failed.`
-          : " — AIA publishes with a T+2 business day lag."}
+          ? ` — ${staleDays} ${t("shared.staleWarning")}`
+          : ` — ${t("shared.lagInfo")}`}
       </span>
     </div>
   );
