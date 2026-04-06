@@ -34,7 +34,8 @@ interface IlasTrackViewProps {
   isDistribution: boolean;
 }
 
-function IlasTopMovers({ funds, t }: { funds: IlasFundWithLatestPrice[]; t: (key: string) => string }) {
+function IlasTopMovers({ funds }: { funds: IlasFundWithLatestPrice[] }) {
+  const { t } = useLanguage();
   const withChange = funds.filter((f) => f.daily_change_pct !== null && f.daily_change_pct !== 0);
 
   const gainers = [...withChange]
@@ -327,7 +328,7 @@ export function IlasTrackView({
             Top Movers — {latestDate}
           </h2>
         </div>
-        <IlasTopMovers funds={fundsWithPrices} t={t} />
+        <IlasTopMovers funds={fundsWithPrices} />
       </section>
 
       {/* Fund Heatmap */}
