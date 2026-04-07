@@ -1,6 +1,6 @@
 "use client";
 
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage, getFundName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import { SCREENER_CATEGORIES, FUND_CATEGORY_LABELS } from "@/lib/mpf/constants";
@@ -50,6 +50,7 @@ type SortKey = (typeof VALID_SORTS)[number];
 interface ScreenerRow {
   fund_code: string;
   name_en: string;
+  name_zh: string | null;
   category: FundCategory;
   risk_rating: number;
   sortino_ratio: number | null;
@@ -68,7 +69,7 @@ interface ScreenerViewProps {
 }
 
 export function ScreenerView({ rows, period, categoryFilter, sort, ascending }: ScreenerViewProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const periodLabels: Record<string, string> = {
     "1y": t("period.1y"),
@@ -237,7 +238,7 @@ export function ScreenerView({ rows, period, categoryFilter, sort, ascending }: 
                           {row.fund_code}
                         </span>
                         <span className="hidden sm:inline">
-                          {row.name_en}
+                          {getFundName(row, locale)}
                         </span>
                       </Link>
                     </td>

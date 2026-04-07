@@ -28,6 +28,7 @@ type SortKey = (typeof VALID_SORTS)[number];
 interface ScreenerRow {
   fund_code: string;
   name_en: string;
+  name_zh: string | null;
   category: FundCategory;
   risk_rating: number;
   sortino_ratio: number | null;
@@ -54,7 +55,7 @@ async function getScreenerData(
 
   const { data: funds, error: fundsErr } = await supabase
     .from("mpf_funds")
-    .select("id, fund_code, name_en, category, risk_rating")
+    .select("id, fund_code, name_en, name_zh, category, risk_rating")
     .eq("is_active", true);
 
   if (fundsErr) console.error("[screener] funds query error:", fundsErr);
@@ -78,6 +79,7 @@ async function getScreenerData(
     rows.push({
       fund_code: fund.fund_code,
       name_en: fund.name_en,
+      name_zh: fund.name_zh ?? null,
       category: fund.category as FundCategory,
       risk_rating: fund.risk_rating,
       sortino_ratio: m.sortino_ratio,

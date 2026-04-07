@@ -4,6 +4,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { FundHeading } from "@/components/mpf/fund-heading";
 import { ILAS_CATEGORY_LABELS } from "@/lib/ilas/constants";
 import type {
   IlasFund,
@@ -28,7 +29,7 @@ export async function generateMetadata({
 
   const { data: fund } = await supabase
     .from("ilas_funds")
-    .select("name_en, fund_code")
+    .select("name_en, name_zh, fund_code")
     .eq("fund_code", fund_code)
     .single();
 
@@ -168,7 +169,7 @@ export default async function IlasFundDetailPage({
       {/* ---------- Header ---------- */}
       <header className="mb-10 lg:mb-12">
         <h1 className="text-[clamp(1.25rem,3vw,2.25rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.15]">
-          {f.name_en}
+          <FundHeading fund={f} />
         </h1>
 
         {/* Badges row */}

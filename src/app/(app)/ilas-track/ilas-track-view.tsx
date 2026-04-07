@@ -1,6 +1,6 @@
 "use client";
 
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage, getFundName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { ILAS_CATEGORY_LABELS, ILAS_INSIGHT_DISCLAIMER } from "@/lib/ilas/constants";
 import type { IlasFundCategory, IlasFundWithLatestPrice } from "@/lib/ilas/types";
@@ -14,6 +14,7 @@ import Link from "next/link";
 interface PortfolioFund {
   fund_code: string;
   name_en: string;
+  name_zh?: string | null;
   weight: number;
   note: string | null;
   currency: string;
@@ -35,7 +36,7 @@ interface IlasTrackViewProps {
 }
 
 function IlasTopMovers({ funds }: { funds: IlasFundWithLatestPrice[] }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const withChange = funds.filter((f) => f.daily_change_pct !== null && f.daily_change_pct !== 0);
 
   const gainers = [...withChange]
@@ -67,7 +68,7 @@ function IlasTopMovers({ funds }: { funds: IlasFundWithLatestPrice[] }) {
                 className="flex items-center justify-between hover:bg-zinc-800/20 -mx-2 px-2 rounded transition-colors"
               >
                 <div className="min-w-0 mr-3">
-                  <span className="text-[13px] text-zinc-300 line-clamp-1">{fund.name_en}</span>
+                  <span className="text-[13px] text-zinc-300 line-clamp-1">{getFundName(fund, locale)}</span>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[11px] text-zinc-400 font-mono">{fund.fund_code}</span>
                     <span className="text-[10px] text-zinc-500 font-mono">{fund.currency}</span>
@@ -98,7 +99,7 @@ function IlasTopMovers({ funds }: { funds: IlasFundWithLatestPrice[] }) {
                 className="flex items-center justify-between hover:bg-zinc-800/20 -mx-2 px-2 rounded transition-colors"
               >
                 <div className="min-w-0 mr-3">
-                  <span className="text-[13px] text-zinc-300 line-clamp-1">{fund.name_en}</span>
+                  <span className="text-[13px] text-zinc-300 line-clamp-1">{getFundName(fund, locale)}</span>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[11px] text-zinc-400 font-mono">{fund.fund_code}</span>
                     <span className="text-[10px] text-zinc-500 font-mono">{fund.currency}</span>
@@ -120,6 +121,7 @@ function IlasTopMovers({ funds }: { funds: IlasFundWithLatestPrice[] }) {
 }
 
 function IlasHeatmap({ funds }: { funds: IlasFundWithLatestPrice[] }) {
+  const { locale } = useLanguage();
   const grouped = funds.reduce(
     (acc, fund) => {
       const cat = fund.category;
@@ -162,7 +164,7 @@ function IlasHeatmap({ funds }: { funds: IlasFundWithLatestPrice[] }) {
                 >
                   <div className="text-[11px] font-mono text-zinc-400">{fund.fund_code}</div>
                   <div className="text-[12px] text-zinc-300 mt-0.5 line-clamp-2 leading-tight min-h-[2rem]">
-                    {fund.name_en}
+                    {getFundName(fund, locale)}
                   </div>
                   <div className="flex items-center justify-between mt-1.5">
                     <span className="text-[10px] font-mono text-zinc-500">{fund.currency}</span>

@@ -1,10 +1,14 @@
 // src/components/ilas/portfolio-reference.tsx
 // ILAS reference portfolio — accumulation or distribution allocation view
+"use client";
+
 import { cn } from "@/lib/utils";
+import { useLanguage, getFundName } from "@/lib/i18n";
 
 interface IlasPortfolioFund {
   fund_code: string;
   name_en: string;
+  name_zh?: string | null;
   weight: number;
   note: string | null;
   currency: string;
@@ -37,6 +41,7 @@ export function IlasPortfolioReference({
   priceDate,
   updatedAt,
 }: IlasPortfolioReferenceProps) {
+  const { locale } = useLanguage();
   if (funds.length === 0) return null;
 
   const title =
@@ -124,7 +129,7 @@ export function IlasPortfolioReference({
             >
               <div>
                 <span className="text-[13px] text-zinc-300">
-                  {fund.name_en}
+                  {getFundName(fund, locale)}
                 </span>
                 <span className="text-[10px] text-zinc-400 ml-2 font-mono">
                   {fund.fund_code}

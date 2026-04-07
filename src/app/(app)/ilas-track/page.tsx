@@ -96,6 +96,7 @@ async function getIlasData(isDistribution: boolean) {
       return {
         fund_code: fund.fund_code,
         name_en: fund.name_en,
+        name_zh: fund.name_zh ?? null,
         weight: row.weight,
         note: row.note,
         currency: fund.currency,

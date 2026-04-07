@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import type { FundWithLatestPrice } from "@/lib/mpf/types";
 import { FUND_CATEGORY_LABELS } from "@/lib/mpf/constants";
 import type { FundCategory } from "@/lib/mpf/types";
+import { useLanguage, getFundName } from "@/lib/i18n";
 
 export function FundHeatmap({ funds }: { funds: FundWithLatestPrice[] }) {
   const router = useRouter();
+  const { locale } = useLanguage();
 
   if (funds.length === 0) {
     return <p className="text-sm text-zinc-400">No fund data available.</p>;
@@ -49,7 +51,7 @@ export function FundHeatmap({ funds }: { funds: FundWithLatestPrice[] }) {
                   )}
                 >
                   <div className="text-[11px] font-mono text-zinc-300">{fund.fund_code}</div>
-                  <div className="text-[12px] text-zinc-300 mt-0.5 truncate">{fund.name_en}</div>
+                  <div className="text-[12px] text-zinc-300 mt-0.5 truncate">{getFundName(fund, locale)}</div>
                   <div
                     className={cn(
                       "text-[14px] font-mono font-semibold mt-1 tabular-nums",

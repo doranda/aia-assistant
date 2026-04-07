@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { FundHeading } from "@/components/mpf/fund-heading";
 import { FundChart } from "@/components/mpf/fund-chart";
 import { RiskMetrics } from "@/components/mpf/risk-metrics";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
@@ -90,7 +91,7 @@ export default async function FundExplorerPage({
           </a>
         </div>
         <h1 className="text-[clamp(1.5rem,3vw,2.25rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.1]">
-          {fund.name_en}
+          <FundHeading fund={fund} />
         </h1>
         <div className="flex items-center gap-4 mt-2">
           <span className="text-[12px] font-mono text-zinc-300">{fund.fund_code}</span>

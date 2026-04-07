@@ -1,9 +1,13 @@
 // src/components/mpf/portfolio-reference.tsx
+"use client";
+
 import { cn } from "@/lib/utils";
+import { useLanguage, getFundName } from "@/lib/i18n";
 
 interface PortfolioFund {
   fund_code: string;
   name_en: string;
+  name_zh?: string | null;
   weight: number;
   note: string | null;
   latest_nav: number | null;
@@ -34,6 +38,7 @@ function returnColor(val: number | null): string {
 }
 
 export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioReferenceProps) {
+  const { locale } = useLanguage();
   if (funds.length === 0) return null;
 
   // Weighted returns
@@ -109,7 +114,7 @@ export function PortfolioReference({ funds, priceDate, updatedAt }: PortfolioRef
             className="grid grid-cols-[1fr_60px_70px_70px_70px_70px] px-4 py-3 border-b border-zinc-800/40 last:border-b-0 items-center"
           >
             <div>
-              <span className="text-[13px] text-zinc-300">{fund.name_en}</span>
+              <span className="text-[13px] text-zinc-300">{getFundName(fund, locale)}</span>
               <span className="text-[10px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
             </div>
             <span className="text-[13px] font-mono font-semibold text-zinc-300 text-right">

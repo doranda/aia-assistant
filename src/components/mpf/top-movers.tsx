@@ -1,8 +1,12 @@
 // src/components/mpf/top-movers.tsx
+"use client";
+
 import { cn } from "@/lib/utils";
 import type { FundWithLatestPrice } from "@/lib/mpf/types";
+import { useLanguage, getFundName } from "@/lib/i18n";
 
 export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
+  const { locale } = useLanguage();
   const withChange = funds.filter((f) => f.daily_change_pct !== null && f.daily_change_pct !== 0);
 
   const gainers = [...withChange]
@@ -30,7 +34,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
           {gainers.map((fund) => (
             <li key={fund.id} className="flex items-center justify-between py-3 first:pt-0">
               <div className="min-w-0">
-                <span className="text-[13px] text-zinc-300 truncate">{fund.name_en}</span>
+                <span className="text-[13px] text-zinc-300 truncate">{getFundName(fund, locale)}</span>
                 <span className="text-[11px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
               </div>
               <span className="text-[13px] font-mono font-semibold tabular-nums text-emerald-400 shrink-0">
@@ -53,7 +57,7 @@ export function TopMovers({ funds }: { funds: FundWithLatestPrice[] }) {
           {losers.map((fund) => (
             <li key={fund.id} className="flex items-center justify-between py-3 first:pt-0">
               <div className="min-w-0">
-                <span className="text-[13px] text-zinc-300 truncate">{fund.name_en}</span>
+                <span className="text-[13px] text-zinc-300 truncate">{getFundName(fund, locale)}</span>
                 <span className="text-[11px] text-zinc-400 ml-2 font-mono">{fund.fund_code}</span>
               </div>
               <span className="text-[13px] font-mono font-semibold tabular-nums text-red-400 shrink-0">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage, getFundName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
   ILAS_CATEGORY_LABELS,
@@ -111,7 +111,7 @@ export function IlasScreenerView({
   sortDir,
   fundHouses,
 }: IlasScreenerViewProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const baseParams: Record<string, string> = {};
   if (activeCat !== "All") baseParams.cat = activeCat;
@@ -276,7 +276,7 @@ export function IlasScreenerView({
                       href={`/ilas-track/funds/${fund.fund_code}`}
                       className="text-[13px] text-zinc-300 hover:text-zinc-100 transition-colors line-clamp-1"
                     >
-                      {fund.name_en}
+                      {getFundName(fund, locale)}
                     </Link>
                     {fund.is_distribution && (
                       <span className="inline-block ml-1.5 text-[9px] font-mono text-amber-400 bg-amber-950/30 border border-amber-800/20 rounded px-1 py-0.5 align-middle">

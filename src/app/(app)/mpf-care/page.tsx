@@ -67,7 +67,7 @@ async function getOverviewData() {
   const now = new Date();
   const ytdStart = `${now.getFullYear()}-01-01`;
 
-  const portfolioFunds: { fund_code: string; name_en: string; weight: number; note: string | null; latest_nav: number | null; daily_change_pct: number | null; returns: { mtd: number | null; ytd: number | null; y1: number | null } }[] = (refPortfolio || []).map((rp) => {
+  const portfolioFunds: { fund_code: string; name_en: string; name_zh: string | null; weight: number; note: string | null; latest_nav: number | null; daily_change_pct: number | null; returns: { mtd: number | null; ytd: number | null; y1: number | null } }[] = (refPortfolio || []).map((rp) => {
     const fund = fundIdToCode.get(rp.fund_id);
     if (!fund) return null;
     const latestPrice = priceMap.get(rp.fund_id);
@@ -91,6 +91,7 @@ async function getOverviewData() {
     return {
       fund_code: fund.fund_code,
       name_en: fund.name_en,
+      name_zh: fund.name_zh ?? null,
       weight: rp.weight,
       note: rp.note,
       latest_nav: latestNav,

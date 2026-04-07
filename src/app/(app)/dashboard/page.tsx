@@ -12,7 +12,7 @@ async function getStats() {
     supabase.from("popular_queries").select("query_text, count").order("count", { ascending: false }).limit(8),
     supabase
       .from("mpf_prices")
-      .select("daily_change_pct, date, mpf_funds(fund_code, name_en)")
+      .select("daily_change_pct, date, mpf_funds(fund_code, name_en, name_zh)")
       .not("daily_change_pct", "is", null)
       .order("date", { ascending: false })
       .limit(100),
@@ -56,7 +56,7 @@ async function getStats() {
     totalMessages: messages.count || 0,
     topFAQs: (faqs.data || []) as { id: string; question: string; use_count: number }[],
     popularQueries: (popularQueries.data || []) as { query_text: string; count: number }[],
-    top3Movers: top3Movers as unknown as { daily_change_pct: number | null; date: string; mpf_funds: { fund_code: string; name_en: string } | null }[],
+    top3Movers: top3Movers as unknown as { daily_change_pct: number | null; date: string; mpf_funds: { fund_code: string; name_en: string; name_zh: string | null } | null }[],
     latestInsight: latestInsight as { content_en: string; type: string; created_at: string } | null,
   };
 }

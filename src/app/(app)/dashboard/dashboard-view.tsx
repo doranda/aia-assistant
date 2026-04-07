@@ -1,14 +1,14 @@
 "use client";
 
 import { FileText, MessageSquare, MessagesSquare, BookOpen } from "lucide-react";
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage, getFundName } from "@/lib/i18n";
 
 type TopFAQ = { id: string; question: string; use_count: number };
 type PopularQuery = { query_text: string; count: number };
 type TopMover = {
   daily_change_pct: number | null;
   date: string;
-  mpf_funds: { fund_code: string; name_en: string } | null;
+  mpf_funds: { fund_code: string; name_en: string; name_zh: string | null } | null;
 };
 type LatestInsight = { content_en: string; type: string; created_at: string } | null;
 
@@ -33,7 +33,7 @@ export function DashboardView({
   top3Movers,
   latestInsight,
 }: DashboardViewProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   return (
     <main className="max-w-[980px] mx-auto px-6 py-16 lg:py-24">
@@ -142,7 +142,7 @@ export function DashboardView({
               return (
                 <div key={i} className="flex items-center justify-between py-3 first:pt-0">
                   <div>
-                    <span className="text-[13px] text-zinc-300">{fund?.name_en}</span>
+                    <span className="text-[13px] text-zinc-300">{fund ? getFundName(fund, locale) : ""}</span>
                     <span className="text-[11px] text-zinc-600 ml-2 font-mono">{fund?.fund_code}</span>
                   </div>
                   <span className={`text-[13px] font-mono font-semibold tabular-nums ${pct > 0 ? "text-emerald-400" : "text-red-400"}`}>
