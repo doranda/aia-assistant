@@ -261,17 +261,30 @@ export async function evaluateAndRebalanceIlas(
     }
   }
 
-  // Check 2: Metrics coverage — 80% of active funds must have 3y metrics
-  // Must match the period used in the actual metrics fetch below (period: "3y")
+  // Check 2: Metrics coverage — 80% of active funds must have metrics (any period).
+  // ILAS funds have varied launch dates; require 1y OR since_launch so newer
+  // funds aren't silently excluded. Matches the downstream fetch below.
   const activeFundCodes = (activeFunds || []).map(f => f.fund_code);
-  const { data: metricsCount, error: metricsCountError } = await supabase
+  const { data: metricsCount1y, error: metrics1yError } = await supabase
     .from("ilas_fund_metrics")
     .select("fund_code")
-    .eq("period", "3y")
+    .eq("period", "1y")
     .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
-  if (metricsCountError) console.error(`${logPrefix} Failed to fetch metrics count:`, metricsCountError);
+  if (metrics1yError) console.error(`${logPrefix} Failed to fetch 1y metrics:`, metrics1yError);
 
-  const fundsWithMetrics = metricsCount?.length || 0;
+  const { data: metricsSL, error: metricsSLError } = await supabase
+    .from("ilas_fund_metrics")
+    .select("fund_code")
+    .eq("period", "since_launch")
+    .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
+  if (metricsSLError) console.error(`${logPrefix} Failed to fetch since_launch metrics:`, metricsSLError);
+
+  // Union: fund has metrics if either period is populated
+  const metricsSet = new Set([
+    ...(metricsCount1y || []).map(m => m.fund_code),
+    ...(metricsSL || []).map(m => m.fund_code),
+  ]);
+  const fundsWithMetrics = metricsSet.size;
   const coveragePct = totalActive > 0 ? (fundsWithMetrics / totalActive) * 100 : 0;
 
   if (coveragePct < ILAS_REBALANCER_CONFIG.METRICS_COVERAGE_PCT * 100) {
@@ -280,7 +293,7 @@ export async function evaluateAndRebalanceIlas(
     await sendDiscordAlert(
       {
         title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Missing Metrics)`,
-        description: `Only **${fundsWithMetrics}/${totalActive}** funds have 3Y metrics (need 80%+).\n\nRun the metrics cron to fix.`,
+        description: `Only **${fundsWithMetrics}/${totalActive}** funds have 1y/since_launch metrics (need 80%+).\n\nRun the metrics cron to fix.`,
         color: COLORS.red,
       },
       { urgent: true }

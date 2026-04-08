@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,14 @@ export function ApprovalsList({ items }: { items: PendingItem[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Tick every 30s so the expiry countdown updates live (not just on page reload)
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (items.length === 0) return;
+    const interval = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(interval);
+  }, [items.length]);
 
   async function handleApprove(item: PendingItem) {
     setError(null);

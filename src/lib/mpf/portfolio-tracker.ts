@@ -749,10 +749,13 @@ export async function processSettlements(): Promise<{
         }
 
         const dayReturn = prevNav > 0 ? ((dayNav - prevNav) / prevNav) * 100 : 0;
-        await supabase.from("mpf_portfolio_nav").upsert(
+        const { error: backfillUpsertError } = await supabase.from("mpf_portfolio_nav").upsert(
           { date: backfillDate, nav: dayNav, daily_return_pct: dayReturn, holdings: dayHoldings, is_cash: false, is_pretracking: false },
           { onConflict: "date" }
         );
+        if (backfillUpsertError) {
+          console.error(`[portfolio-tracker] NAV backfill upsert failed for ${backfillDate}:`, backfillUpsertError.message);
+        }
         prevNav = dayNav;
         prevHoldings = dayHoldings;
       }

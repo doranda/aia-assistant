@@ -9,8 +9,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendDiscordAlert, COLORS } from "@/lib/discord";
+import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 interface SwitchRow {
@@ -45,13 +46,19 @@ export async function GET(req: NextRequest) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const todayHK = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Hong_Kong" });
 
+  // Track sub-query errors so we don't silently report zeros
+  const subErrors: string[] = [];
+
   try {
     // ===== MPF =====
     const { data: mpfRows, error: mpfErr } = await supabase
       .from("mpf_pending_switches")
       .select("id, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
       .or(`settled_at.gte.${since},created_at.gte.${since}`);
-    if (mpfErr) console.error("[daily-digest] mpf query failed:", mpfErr);
+    if (mpfErr) {
+      console.error("[daily-digest] mpf query failed:", mpfErr);
+      subErrors.push(`mpf_pending_switches: ${mpfErr.message}`);
+    }
     const mpf = (mpfRows || []) as SwitchRow[];
 
     const mpfSettled = mpf.filter((r) => r.status === "settled" && r.settled_at && r.settled_at >= since);
@@ -66,14 +73,20 @@ export async function GET(req: NextRequest) {
       .order("date", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (mpfNavErr) console.error("[daily-digest] mpf nav query failed:", mpfNavErr);
+    if (mpfNavErr) {
+      console.error("[daily-digest] mpf nav query failed:", mpfNavErr);
+      subErrors.push(`mpf_portfolio_nav: ${mpfNavErr.message}`);
+    }
 
     // ===== ILAS =====
     const { data: ilasRows, error: ilasErr } = await supabase
       .from("ilas_portfolio_orders")
       .select("id, portfolio_type, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
       .or(`settled_at.gte.${since},created_at.gte.${since}`);
-    if (ilasErr) console.error("[daily-digest] ilas query failed:", ilasErr);
+    if (ilasErr) {
+      console.error("[daily-digest] ilas query failed:", ilasErr);
+      subErrors.push(`ilas_portfolio_orders: ${ilasErr.message}`);
+    }
     const ilas = (ilasRows || []) as IlasOrderRow[];
 
     const ilasSettled = ilas.filter((r) => r.status === "executed" && r.settled_at && r.settled_at >= since);
@@ -135,6 +148,19 @@ export async function GET(req: NextRequest) {
       lines.push(`⚠️ **Action needed:** ${mpfAwaiting.length + ilasAwaiting.length} request(s) awaiting your approval. Check #aia-alerts-urgent or the dashboard.`);
     }
 
+    // If any sub-query failed, fire an urgent alert BEFORE the digest so the
+    // admin doesn't mistake a degraded digest for an all-quiet morning.
+    if (subErrors.length > 0) {
+      await sendDiscordAlert(
+        {
+          title: "🔴 Daily Digest — Partial Data (sub-query failures)",
+          description: `The morning digest is about to post but ${subErrors.length} sub-query failed:\n\n${subErrors.map((e) => `• ${sanitizeError(e)}`).join("\n")}\n\nCounts below may be underreported.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+    }
+
     await sendDiscordAlert({
       title: `🌅 AIA Morning Digest — ${todayHK}`,
       description: lines.join("\n").slice(0, 1900),
@@ -164,7 +190,7 @@ export async function GET(req: NextRequest) {
     await sendDiscordAlert(
       {
         title: "❌ Daily Digest Cron Failed",
-        description: `Error: ${error instanceof Error ? error.message : "Unknown"}\nDuration: ${Date.now() - t0}ms`,
+        description: `Error: ${sanitizeError(error)}\nDuration: ${Date.now() - t0}ms`,
         color: COLORS.red,
       },
       { urgent: true }

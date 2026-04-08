@@ -726,10 +726,13 @@ export async function processIlasSettlements(
         }
 
         const dayReturn = prevNav > 0 ? ((dayNav - prevNav) / prevNav) * 100 : 0;
-        await supabase.from("ilas_portfolio_nav").upsert(
+        const { error: backfillUpsertError } = await supabase.from("ilas_portfolio_nav").upsert(
           { portfolio_type: portfolioType, date: backfillDate, nav: dayNav, daily_return_pct: dayReturn, holdings: dayHoldings, is_cash: false, is_pretracking: false },
           { onConflict: "portfolio_type,date" }
         );
+        if (backfillUpsertError) {
+          console.error(`[ilas-portfolio-tracker] NAV backfill upsert failed for ${portfolioType}/${backfillDate}:`, backfillUpsertError.message);
+        }
         prevNav = dayNav;
         prevHoldings = dayHoldings;
       }
