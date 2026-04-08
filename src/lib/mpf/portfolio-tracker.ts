@@ -404,6 +404,13 @@ export async function approveSwitch(
   if (fetchErr || !sw) throw new Error("Switch not found or not awaiting approval");
   if (sw.confirmation_token !== token) throw new Error("Invalid confirmation token");
 
+  // Enforce expiry at approve time — the cleanup cron runs daily, so there is
+  // a gap where an expired row still has status='awaiting_approval'. Without
+  // this check, a stale tab or direct API call can approve after expiry.
+  if (sw.expires_at && new Date(sw.expires_at) < new Date()) {
+    throw new Error("Switch expired — cannot approve");
+  }
+
   // Compute fresh dates from today
   const today = new Date().toISOString().split("T")[0];
   const effectiveDate = isWorkingDay(today, holidays)

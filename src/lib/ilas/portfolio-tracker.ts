@@ -409,6 +409,13 @@ export async function approveIlasSwitch(
   if (order.confirmation_token !== token)
     throw new Error("Invalid confirmation token");
 
+  // Enforce expiry at approve time — the cleanup cron runs daily, so there is
+  // a gap where an expired order still has status='awaiting_approval'. Without
+  // this check, a stale tab or direct API call can approve after expiry.
+  if (order.expires_at && new Date(order.expires_at) < new Date()) {
+    throw new Error("Order expired — cannot approve");
+  }
+
   // Compute fresh dates from today
   const today = new Date().toISOString().split("T")[0];
   const effectiveDate = isWorkingDay(today, holidays)

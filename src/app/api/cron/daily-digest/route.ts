@@ -51,20 +51,35 @@ export async function GET(req: NextRequest) {
 
   try {
     // ===== MPF =====
-    const { data: mpfRows, error: mpfErr } = await supabase
+    // Two queries: one for 24h settlements, one for all currently-active rows.
+    // A single OR query on (settled_at.gte, created_at.gte) would miss switches
+    // created >24h ago that are still pending/awaiting — exactly when the admin
+    // most needs to see them in the morning digest.
+    const { data: mpfSettledRows, error: mpfSettledErr } = await supabase
       .from("mpf_pending_switches")
       .select("id, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
-      .or(`settled_at.gte.${since},created_at.gte.${since}`);
-    if (mpfErr) {
-      console.error("[daily-digest] mpf query failed:", mpfErr);
-      subErrors.push(`mpf_pending_switches: ${mpfErr.message}`);
+      .eq("status", "settled")
+      .gte("settled_at", since);
+    if (mpfSettledErr) {
+      console.error("[daily-digest] mpf settled query failed:", mpfSettledErr);
+      subErrors.push(`mpf_pending_switches (settled): ${mpfSettledErr.message}`);
     }
-    const mpf = (mpfRows || []) as SwitchRow[];
 
-    const mpfSettled = mpf.filter((r) => r.status === "settled" && r.settled_at && r.settled_at >= since);
-    const mpfPending = mpf.filter((r) => r.status === "pending");
-    const mpfAwaiting = mpf.filter((r) => r.status === "awaiting_approval");
-    const mpfEmergency = mpf.filter((r) => r.is_emergency);
+    const { data: mpfActiveRows, error: mpfActiveErr } = await supabase
+      .from("mpf_pending_switches")
+      .select("id, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
+      .in("status", ["pending", "awaiting_approval"])
+      .order("settlement_date", { ascending: true, nullsFirst: false });
+    if (mpfActiveErr) {
+      console.error("[daily-digest] mpf active query failed:", mpfActiveErr);
+      subErrors.push(`mpf_pending_switches (active): ${mpfActiveErr.message}`);
+    }
+
+    const mpfSettled = (mpfSettledRows || []) as SwitchRow[];
+    const mpfActive = (mpfActiveRows || []) as SwitchRow[];
+    const mpfPending = mpfActive.filter((r) => r.status === "pending");
+    const mpfAwaiting = mpfActive.filter((r) => r.status === "awaiting_approval");
+    const mpfEmergency = [...mpfSettled, ...mpfActive].filter((r) => r.is_emergency);
 
     // Most recent NAV row
     const { data: mpfNavRow, error: mpfNavErr } = await supabase
@@ -79,19 +94,32 @@ export async function GET(req: NextRequest) {
     }
 
     // ===== ILAS =====
-    const { data: ilasRows, error: ilasErr } = await supabase
+    // Same split as MPF — one query per state window.
+    const { data: ilasSettledRows, error: ilasSettledErr } = await supabase
       .from("ilas_portfolio_orders")
       .select("id, portfolio_type, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
-      .or(`settled_at.gte.${since},created_at.gte.${since}`);
-    if (ilasErr) {
-      console.error("[daily-digest] ilas query failed:", ilasErr);
-      subErrors.push(`ilas_portfolio_orders: ${ilasErr.message}`);
+      .eq("status", "executed")
+      .gte("settled_at", since);
+    if (ilasSettledErr) {
+      console.error("[daily-digest] ilas settled query failed:", ilasSettledErr);
+      subErrors.push(`ilas_portfolio_orders (settled): ${ilasSettledErr.message}`);
     }
-    const ilas = (ilasRows || []) as IlasOrderRow[];
 
-    const ilasSettled = ilas.filter((r) => r.status === "executed" && r.settled_at && r.settled_at >= since);
-    const ilasPending = ilas.filter((r) => r.status === "pending");
-    const ilasAwaiting = ilas.filter((r) => r.status === "awaiting_approval");
+    const { data: ilasActiveRows, error: ilasActiveErr } = await supabase
+      .from("ilas_portfolio_orders")
+      .select("id, portfolio_type, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
+      .in("status", ["pending", "awaiting_approval"])
+      .order("settlement_date", { ascending: true, nullsFirst: false });
+    if (ilasActiveErr) {
+      console.error("[daily-digest] ilas active query failed:", ilasActiveErr);
+      subErrors.push(`ilas_portfolio_orders (active): ${ilasActiveErr.message}`);
+    }
+
+    const ilasSettled = (ilasSettledRows || []) as IlasOrderRow[];
+    const ilasActive = (ilasActiveRows || []) as IlasOrderRow[];
+    const ilas = [...ilasSettled, ...ilasActive];
+    const ilasPending = ilasActive.filter((r) => r.status === "pending");
+    const ilasAwaiting = ilasActive.filter((r) => r.status === "awaiting_approval");
     const ilasEmergency = ilas.filter((r) => r.is_emergency);
 
     // Build digest
@@ -119,14 +147,12 @@ export async function GET(req: NextRequest) {
 
     // ILAS section
     lines.push("**📊 ILAS Track**");
-    const acc = ilas.filter((r) => r.portfolio_type === "accumulation");
-    const dis = ilas.filter((r) => r.portfolio_type === "distribution");
-    const accSettled = acc.filter((r) => r.status === "executed" && r.settled_at && r.settled_at >= since);
-    const accPending = acc.filter((r) => r.status === "pending");
-    const accAwaiting = acc.filter((r) => r.status === "awaiting_approval");
-    const disSettled = dis.filter((r) => r.status === "executed" && r.settled_at && r.settled_at >= since);
-    const disPending = dis.filter((r) => r.status === "pending");
-    const disAwaiting = dis.filter((r) => r.status === "awaiting_approval");
+    const accSettled = ilasSettled.filter((r) => r.portfolio_type === "accumulation");
+    const accPending = ilasPending.filter((r) => r.portfolio_type === "accumulation");
+    const accAwaiting = ilasAwaiting.filter((r) => r.portfolio_type === "accumulation");
+    const disSettled = ilasSettled.filter((r) => r.portfolio_type === "distribution");
+    const disPending = ilasPending.filter((r) => r.portfolio_type === "distribution");
+    const disAwaiting = ilasAwaiting.filter((r) => r.portfolio_type === "distribution");
 
     lines.push(`• Accumulation — settled: ${accSettled.length}, pending: ${accPending.length}, awaiting: ${accAwaiting.length}`);
     lines.push(`• Distribution — settled: ${disSettled.length}, pending: ${disPending.length}, awaiting: ${disAwaiting.length}`);
@@ -150,8 +176,12 @@ export async function GET(req: NextRequest) {
 
     // If any sub-query failed, fire an urgent alert BEFORE the digest so the
     // admin doesn't mistake a degraded digest for an all-quiet morning.
-    if (subErrors.length > 0) {
-      await sendDiscordAlert(
+    // Also prefix the main digest title with ⚠️ DEGRADED so the visual signal
+    // is inside the message that *did* arrive — even if the urgent alert itself
+    // fails to send (webhook down, rate-limited, etc).
+    const degraded = subErrors.length > 0;
+    if (degraded) {
+      const sentUrgent = await sendDiscordAlert(
         {
           title: "🔴 Daily Digest — Partial Data (sub-query failures)",
           description: `The morning digest is about to post but ${subErrors.length} sub-query failed:\n\n${subErrors.map((e) => `• ${sanitizeError(e)}`).join("\n")}\n\nCounts below may be underreported.`,
@@ -159,16 +189,23 @@ export async function GET(req: NextRequest) {
         },
         { urgent: true }
       );
+      if (!sentUrgent) {
+        console.error("[daily-digest] Urgent partial-data alert failed to send — degraded marker in main digest title is the fallback signal");
+      }
     }
 
     await sendDiscordAlert({
-      title: `🌅 AIA Morning Digest — ${todayHK}`,
+      title: degraded
+        ? `⚠️ DEGRADED — AIA Morning Digest — ${todayHK}`
+        : `🌅 AIA Morning Digest — ${todayHK}`,
       description: lines.join("\n").slice(0, 1900),
-      color: COLORS.green,
+      color: degraded ? COLORS.yellow : COLORS.green,
     });
 
     return NextResponse.json({
       ok: true,
+      degraded,
+      subErrors: subErrors.length,
       date: todayHK,
       mpf: {
         settled: mpfSettled.length,
