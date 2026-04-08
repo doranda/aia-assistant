@@ -103,16 +103,17 @@ export async function GET(req: NextRequest) {
     console.error("[news-cron] Correlation step failed:", corrErr);
   }
 
-  // STEP 3: REBALANCE — only if high-impact news found (saves time on most runs)
+  // STEP 3: REBALANCE
+  // MPF rebalance — always call; the rebalancer has its own weekly rate limit
+  // (no separate MPF weekly debate cron exists, unlike ILAS)
   let ilasRebResult = "skipped";
-  if (highImpact > 0) {
-    // MPF rebalance
-    try {
-      const result = await evaluateAndRebalance(highImpact);
-      rebResult = result.rebalanced ? `rebalanced: ${result.reason}` : result.reason;
-    } catch (e) { rebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
+  try {
+    const result = await evaluateAndRebalance(highImpact);
+    rebResult = result.rebalanced ? `rebalanced: ${result.reason}` : result.reason;
+  } catch (e) { rebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
 
-    // ILAS rebalance — same high-impact news affects ILAS funds too
+  // ILAS rebalance — only on high-impact news (ILAS has its own weekly cron at /api/ilas/cron/weekly)
+  if (highImpact > 0) {
     try {
       const accResult = await evaluateAndRebalanceIlas("accumulation", highImpact);
       const disResult = await evaluateAndRebalanceIlas("distribution", highImpact);
@@ -121,8 +122,6 @@ export async function GET(req: NextRequest) {
         `dis: ${disResult.rebalanced ? "rebalanced" : disResult.reason}`,
       ].join("; ");
     } catch (e) { ilasRebResult = `error: ${e instanceof Error ? e.message : "unknown"}`; }
-  } else {
-    rebResult = "skipped — no high-impact news";
   }
 
   const { error: runLogErr } = await supabase.from("scraper_runs").insert({ scraper_name: "news_pipeline", status: "success", records_processed: fetched + classified, duration_ms: Date.now() - t0 });
@@ -149,7 +148,7 @@ export async function GET(req: NextRequest) {
         `**Duration:** ${Date.now() - t0}ms`,
       ].join("\n"),
       color: COLORS.red,
-    });
+    }, { urgent: true });
 
     return NextResponse.json({ error: "News pipeline failed" }, { status: 500 });
   }

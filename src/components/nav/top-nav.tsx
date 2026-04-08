@@ -4,9 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n";
-import { LayoutDashboard, MessageSquare, BarChart3, FileText, BookOpen, Users, TrendingUp } from "lucide-react";
+import { LayoutDashboard, MessageSquare, BarChart3, FileText, BookOpen, Users, TrendingUp, BellRing } from "lucide-react";
 
-export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { userInitials: string; pendingCount?: number; mpfAlertCount?: number }) {
+export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0, approvalsCount = 0 }: { userInitials: string; pendingCount?: number; mpfAlertCount?: number; approvalsCount?: number }) {
   const pathname = usePathname();
   const router = useRouter();
   const { locale, setLocale, t } = useLanguage();
@@ -19,6 +19,7 @@ export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { 
     { labelKey: "nav.documents" as const, href: "/documents", icon: FileText },
     { labelKey: "nav.faqs" as const, href: "/faqs", icon: BookOpen },
     { labelKey: "nav.team" as const, href: "/team", icon: Users },
+    { labelKey: "nav.approvals" as const, href: "/approvals", icon: BellRing },
   ];
 
   async function handleSignOut() {
@@ -62,6 +63,11 @@ export function TopNav({ userInitials, pendingCount = 0, mpfAlertCount = 0 }: { 
                 )}
                 {item.labelKey === "nav.mpfCare" && mpfAlertCount > 0 && (
                   <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                )}
+                {item.labelKey === "nav.approvals" && approvalsCount > 0 && (
+                  <span className="ml-0.5 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-red-600 text-[9px] font-bold text-white">
+                    {approvalsCount}
+                  </span>
                 )}
               </button>
             );

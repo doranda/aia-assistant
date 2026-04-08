@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
           title: "🔴 MPF Care — All Price Sources Failed",
           description: "AIA daily prices AND MPFA Excel fallback both failed. No new price data ingested. Portfolio NAV cron will use stale prices.",
           color: COLORS.red,
-        });
+        }, { urgent: true });
       }
     }
 
@@ -167,7 +167,7 @@ export async function GET(req: NextRequest) {
         `**Duration:** ${Date.now() - startTime}ms`,
       ].join("\n"),
       color: COLORS.red,
-    });
+    }, { urgent: true });
 
     return NextResponse.json({ error: "Scrape failed" }, { status: 500 });
   }

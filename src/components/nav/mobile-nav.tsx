@@ -3,9 +3,9 @@
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n";
-import { LayoutDashboard, MessageSquare, BarChart3, FileText, TrendingUp, BookOpen, Users } from "lucide-react";
+import { LayoutDashboard, MessageSquare, BarChart3, FileText, TrendingUp, BookOpen, Users, BellRing } from "lucide-react";
 
-export function MobileNav() {
+export function MobileNav({ approvalsCount = 0 }: { approvalsCount?: number } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLanguage();
@@ -18,6 +18,7 @@ export function MobileNav() {
     { labelKey: "mobileNav.docs" as const, href: "/documents", icon: FileText },
     { labelKey: "mobileNav.faqs" as const, href: "/faqs", icon: BookOpen },
     { labelKey: "mobileNav.team" as const, href: "/team", icon: Users },
+    { labelKey: "mobileNav.approvals" as const, href: "/approvals", icon: BellRing },
   ];
 
   return (
@@ -37,6 +38,11 @@ export function MobileNav() {
             >
               <span className="relative">
                 <Icon className="w-5 h-5" />
+                {item.labelKey === "mobileNav.approvals" && approvalsCount > 0 && (
+                  <span className="absolute -top-1 -right-2 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-red-600 text-[9px] font-bold text-white">
+                    {approvalsCount}
+                  </span>
+                )}
               </span>
               <span className="text-[10px] font-semibold">{t(item.labelKey)}</span>
             </button>

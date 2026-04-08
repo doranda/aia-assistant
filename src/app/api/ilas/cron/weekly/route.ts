@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
       title: "ILAS Track -- Weekly Debate Failed",
       description: `**Error:** ${sanitizeError(error)}\n**Duration:** ${Date.now() - startTime}ms`,
       color: COLORS.red,
-    });
+    }, { urgent: true });
 
     return NextResponse.json({ error: "Weekly debate failed" }, { status: 500 });
   }

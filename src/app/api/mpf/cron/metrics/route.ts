@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
       title: "❌ MPF Care — Metrics Computation Failed",
       description: `**Error:** ${sanitizeError(error)}\n**Duration:** ${Date.now() - startTime}ms`,
       color: COLORS.red,
-    });
+    }, { urgent: true });
 
     return NextResponse.json({ error: "Metrics computation failed" }, { status: 500 });
   }

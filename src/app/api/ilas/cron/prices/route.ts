@@ -106,7 +106,7 @@ export async function GET(req: Request) {
       title: "❌ ILAS Track — Price Scrape Failed",
       description: `**Error:** ${sanitizeError(error)}`,
       color: COLORS.red,
-    });
+    }, { urgent: true });
     return NextResponse.json({ error: "Scrape failed" }, { status: 500 });
   }
 }
@@ -171,7 +171,7 @@ export async function POST(req: Request) {
       title: "❌ ILAS Track — Price POST Failed",
       description: `**Error:** ${sanitizeError(error)}`,
       color: COLORS.red,
-    });
+    }, { urgent: true });
     return NextResponse.json({ error: "POST failed" }, { status: 500 });
   }
 }

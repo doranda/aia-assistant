@@ -54,15 +54,34 @@ export default async function AppLayout({
     .gte("run_at", new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString());
   if (scraperError) console.error("[layout] Failed to fetch scraper runs:", scraperError);
 
+  // Pending emergency approvals — only admins can act, so only count for admins
+  let approvalsCount = 0;
+  if (role === "admin") {
+    const { count: mpfAwait, error: mpfAwaitErr } = await supabase
+      .from("mpf_pending_switches")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "awaiting_approval");
+    if (mpfAwaitErr) console.error("[layout] Failed to fetch mpf awaiting approvals:", mpfAwaitErr);
+
+    const { count: ilasAwait, error: ilasAwaitErr } = await supabase
+      .from("ilas_portfolio_orders")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "awaiting_approval");
+    if (ilasAwaitErr) console.error("[layout] Failed to fetch ilas awaiting approvals:", ilasAwaitErr);
+
+    approvalsCount = (mpfAwait || 0) + (ilasAwait || 0);
+  }
+
   return (
     <LanguageProvider>
       <TopNav
         userInitials={initials || "?"}
         pendingCount={pendingCount}
         mpfAlertCount={mpfAlertCount || 0}
+        approvalsCount={approvalsCount}
       />
       <div className="pt-12 pb-20 lg:pb-0 min-h-dvh">{children}</div>
-      <MobileNav />
+      <MobileNav approvalsCount={approvalsCount} />
     </LanguageProvider>
   );
 }

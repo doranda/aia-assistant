@@ -190,6 +190,7 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
     .select("id")
     .or("type.eq.alert,type.eq.rebalance_debate")
     .or("trigger.eq.portfolio_rebalance,trigger.eq.debate_rebalance")
+    .in("status", ["completed", "submitted"])
     .gte("created_at", todayISO);
   if (todayError) console.error("[debate-rebalancer] Failed to fetch today's rebalances:", todayError);
 
@@ -206,6 +207,7 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
       .select("created_at")
       .or("type.eq.alert,type.eq.rebalance_debate")
       .or("trigger.eq.portfolio_rebalance,trigger.eq.debate_rebalance")
+      .in("status", ["completed", "submitted"])
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
@@ -253,20 +255,25 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
     if (staleFunds.length > 0) {
       const msg = `BLOCKED: stale price data for ${staleFunds.join(", ")}. Fix data pipeline before rebalancing.`;
       console.error(`[debate-rebalancer] ${msg}`);
-      await sendDiscordAlert({
-        title: "🚫 MPF Care — Rebalance Blocked (Stale Data)",
-        description: `**${staleFunds.length} funds** have prices older than 5 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or Yahoo Finance backfill to fix.`,
-        color: COLORS.red,
-      });
+      await sendDiscordAlert(
+        {
+          title: "🚫 MPF Care — Rebalance Blocked (Stale Data)",
+          description: `**${staleFunds.length} funds** have prices older than 5 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or Yahoo Finance backfill to fix.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
       return { rebalanced: false, reason: msg };
     }
   }
 
   // Check 2: Metrics coverage — 80% of active funds must have 3Y metrics
+  const activeCodes = (activeFunds || []).map(f => f.fund_code);
   const { data: metricsCount, error: metricsCountError } = await supabase
     .from("mpf_fund_metrics")
     .select("fund_code")
-    .eq("period", "3y");
+    .eq("period", "3y")
+    .in("fund_code", activeCodes.length > 0 ? activeCodes : ["__none__"]);
   if (metricsCountError) console.error("[debate-rebalancer] Failed to fetch metrics count:", metricsCountError);
 
   const fundsWithMetrics = metricsCount?.length || 0;
@@ -275,11 +282,14 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
   if (coveragePct < 80) {
     const msg = `BLOCKED: insufficient metrics coverage (${fundsWithMetrics}/${totalActive} funds = ${coveragePct.toFixed(0)}%). Run metrics cron first.`;
     console.error(`[debate-rebalancer] ${msg}`);
-    await sendDiscordAlert({
-      title: "🚫 MPF Care — Rebalance Blocked (Missing Metrics)",
-      description: `Only **${fundsWithMetrics}/${totalActive}** funds have 3Y metrics (need 80%+).\n\nRun the metrics cron to fix.`,
-      color: COLORS.red,
-    });
+    await sendDiscordAlert(
+      {
+        title: "🚫 MPF Care — Rebalance Blocked (Missing Metrics)",
+        description: `Only **${fundsWithMetrics}/${totalActive}** funds have 3Y metrics (need 80%+).\n\nRun the metrics cron to fix.`,
+        color: COLORS.red,
+      },
+      { urgent: true }
+    );
     return { rebalanced: false, reason: msg };
   }
 
@@ -452,6 +462,20 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
     return { rebalanced: false, reason: "Mediator proposed empty portfolio" };
   }
 
+  // ===== FUND CODE VALIDATION — reject unknown/inactive codes =====
+  const activeFundCodes = new Set((funds || []).map(f => f.fund_code));
+  const invalidCodes = newPortfolio.filter(p => !activeFundCodes.has(p.code)).map(p => p.code);
+  if (invalidCodes.length > 0) {
+    return { rebalanced: false, reason: `Mediator proposed unknown/inactive fund codes: ${invalidCodes.join(", ")}` };
+  }
+
+  // ===== DEDUP — merge duplicate fund codes by summing weights =====
+  const deduped = new Map<string, number>();
+  for (const p of newPortfolio) {
+    deduped.set(p.code, (deduped.get(p.code) || 0) + p.weight);
+  }
+  newPortfolio = Array.from(deduped.entries()).map(([code, weight]) => ({ code, weight }));
+
   // ===== HARD SAFETY GUARDRAIL =====
   // If danger signals were detected, enforce maximum equity exposure
   if (dangerSignals) {
@@ -545,30 +569,33 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
     mediator.debate_log,
   ].join("\n");
 
-  // Insert insight FIRST to get the ID for linking
-  const { data: insightRow, error: insightInsertError } = await supabase.from("mpf_insights").insert({
-    type: "rebalance_debate",
-    trigger: "debate_rebalance",
-    content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
-    content_zh: mediator.summary_zh,
-    fund_categories: [...new Set(activePortfolio.map(p => {
-      const fund = funds?.find(f => f.fund_code === p.code);
-      return fund?.category || "unknown";
-    }))],
-    status: "completed",
-    model: MODEL,
-  }).select("id").single();
-  if (insightInsertError) console.error("[debate-rebalancer] Failed to insert insight row:", insightInsertError);
+  // Helper: insert insight row with given status
+  const fundCategories = [...new Set(activePortfolio.map(p => {
+    const fund = funds?.find(f => f.fund_code === p.code);
+    return fund?.category || "unknown";
+  }))];
+  const insertInsight = async (status: string) => {
+    const { data: row, error: err } = await supabase.from("mpf_insights").insert({
+      type: "rebalance_debate",
+      trigger: "debate_rebalance",
+      content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
+      content_zh: mediator.summary_zh,
+      fund_categories: fundCategories,
+      status,
+      model: MODEL,
+    }).select("id").single();
+    if (err) console.error("[debate-rebalancer] Failed to insert insight row:", err);
+    return row?.id || null;
+  };
 
-  const insightId = insightRow?.id || null;
-
-  // Check switch gate
+  // Check switch gate BEFORE inserting insight (prevents poisoning rate limits)
   const gate = await canSubmitSwitch();
   const today = new Date().toISOString().split("T")[0];
 
   if (!gate.allowed) {
     if (gate.canOverride) {
-      // Cooldown period — request emergency approval
+      // Cooldown period — insert insight for linking, then request emergency approval
+      const insightId = await insertInsight("pending_approval");
       const topNews = (recentNews || [])
         .filter((n: { is_high_impact: boolean }) => n.is_high_impact)
         .slice(0, 3)
@@ -591,11 +618,13 @@ Return JSON: { "funds": [{ "code": "AIA-XXX", "weight": 50 }, ...], "summary_en"
       };
     }
 
-    // Hard block (pending switch in progress)
+    // Hard block — insert with debate_only status (won't count toward rate limits)
+    await insertInsight("debate_only");
     return { rebalanced: false, reason: gate.reason, debate_log: fullDebateLog };
   }
 
-  // Gate passed — submit switch with T+2 settlement
+  // Gate passed — insert insight as completed, then submit switch with T+2 settlement
+  const insightId = await insertInsight("completed");
   const { sellDate, settlementDate } = await submitSwitch({
     decisionDate: today,
     oldAllocation: currentAlloc,

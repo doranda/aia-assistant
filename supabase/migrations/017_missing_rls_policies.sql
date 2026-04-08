@@ -47,12 +47,19 @@ END $$;
 
 -- ============================================================
 -- MESSAGES: Need DELETE for conversation cleanup
+-- Ownership is via conversations.user_id (messages has no user_id col)
 -- ============================================================
 DO $$ BEGIN
 IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'messages_delete_own') THEN
   CREATE POLICY "messages_delete_own" ON messages
     FOR DELETE TO authenticated
-    USING (user_id = auth.uid());
+    USING (
+      EXISTS (
+        SELECT 1 FROM conversations c
+        WHERE c.id = messages.conversation_id
+        AND c.user_id = auth.uid()
+      )
+    );
 END IF;
 END $$;
 

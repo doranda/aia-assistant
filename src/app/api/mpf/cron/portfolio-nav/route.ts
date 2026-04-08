@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
       title: "❌ MPF Care — Portfolio NAV Cron Failed",
       description: `Error: ${error instanceof Error ? error.message : "Unknown"}\nDuration: ${Date.now() - t0}ms`,
       color: COLORS.red,
-    });
+    }, { urgent: true });
 
     return NextResponse.json({ error: "Portfolio NAV cron failed" }, { status: 500 });
   }

@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
         `**Duration:** ${Date.now() - startTime}ms`,
       ].join("\n"),
       color: COLORS.red,
-    });
+    }, { urgent: true });
 
     return NextResponse.json({ error: "Weekly insight failed" }, { status: 500 });
   }

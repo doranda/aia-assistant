@@ -4,7 +4,7 @@
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendDiscordAlert, COLORS } from "@/lib/discord";
+import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 import {
   loadHKHolidays,
   isWorkingDay,
@@ -225,7 +225,21 @@ export async function submitIlasSwitch(params: {
     .select("id")
     .single();
 
-  if (error) throw new Error(`Failed to insert ILAS order: ${error.message}`);
+  if (error) {
+    // Unique constraint violation = another order was submitted concurrently (race condition)
+    if (error.code === "23505") {
+      await sendDiscordAlert(
+        {
+          title: "🔴 ILAS Order Race Condition (23505)",
+          description: `Concurrent ${params.portfolioType} order submission rejected by unique guard.\nDecision date: ${params.decisionDate}\n_Two callers fired at the same time — debate may have run twice._`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+      throw new Error(`ILAS order rejected: another pending ${params.portfolioType} order already exists (concurrent submission)`);
+    }
+    throw new Error(`Failed to insert ILAS order: ${error.message}`);
+  }
 
   // Insert sell transaction legs (units filled later when T+1 NAV available)
   for (const fund of params.oldAllocation) {
@@ -310,42 +324,66 @@ export async function requestEmergencyIlasSwitch(params: {
     .select("id")
     .single();
 
-  if (error)
+  if (error) {
+    if (error.code === "23505") {
+      // CRITICAL: Emergency override does NOT bypass one-active-switch guard.
+      // If this portfolio_type already has a pending order, the emergency dies silently.
+      // This is the hidden bug from the audit — surface it loudly.
+      await sendDiscordAlert(
+        {
+          title: "🔴 ILAS Emergency Switch BLOCKED (23505)",
+          description: [
+            `Debate proposed an EMERGENCY override for ILAS **${params.portfolioType}** but a pending/awaiting order already exists.`,
+            `Decision date: ${params.decisionDate}`,
+            ``,
+            `**The emergency move did NOT happen.** Either:`,
+            `1. Wait for the existing pending order to settle, OR`,
+            `2. Manually clear it in Supabase \`ilas_portfolio_orders\` if you trust the new debate more.`,
+          ].join("\n"),
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+      throw new Error(`Emergency ILAS order rejected: another pending/awaiting ${params.portfolioType} order already exists (concurrent submission)`);
+    }
     throw new Error(`Failed to insert emergency ILAS order: ${error.message}`);
+  }
 
   // Discord alert with full context (truncate to fit 2000-char embed limit)
   const oldStr = formatIlasAllocation(params.oldAllocation);
   const newStr = formatIlasAllocation(params.newAllocation);
 
-  await sendDiscordAlert({
-    title: "🚨 ILAS Emergency Switch — Approval Required",
-    description: [
-      `**Portfolio:** ${params.portfolioType}`,
-      `**Within 7-day cooldown.** ${lastSwitchInfo}`,
-      "",
-      `**Current:** ${oldStr}`,
-      `**Proposed:** ${newStr}`,
-      "",
-      `**Why:** ${params.debateSummary.slice(0, 300)}`,
-      params.dangerSignals
-        ? `**Danger signals:** ${params.dangerSignals.slice(0, 200)}`
-        : "",
-      params.topNews.length > 0
-        ? `**Key news:** ${params.topNews.slice(0, 3).join(" | ").slice(0, 200)}`
-        : "",
-      "",
-      `**Cash drag:** Switch #${monthCount + 1} this month. 2 more working days in cash.`,
-      "",
-      `**Option A:** Approve → POST /api/ilas/approve-switch`,
-      `Body: { "order_id": "${orderRow.id}", "token": "${token}" }`,
-      `**Option B:** Do nothing — expires in 48h.`,
-      `_Not switching is valid if current allocation already reflects the risk._`,
-    ]
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, 1900),
-    color: COLORS.red,
-  });
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://aia-assistant.vercel.app";
+  await sendDiscordAlert(
+    {
+      title: "🚨 ILAS Emergency Switch — Approval Required",
+      description: [
+        `**Portfolio:** ${params.portfolioType}`,
+        `**Within 7-day cooldown.** ${lastSwitchInfo}`,
+        "",
+        `**Current:** ${oldStr}`,
+        `**Proposed:** ${newStr}`,
+        "",
+        `**Why:** ${params.debateSummary.slice(0, 300)}`,
+        params.dangerSignals
+          ? `**Danger signals:** ${params.dangerSignals.slice(0, 200)}`
+          : "",
+        params.topNews.length > 0
+          ? `**Key news:** ${params.topNews.slice(0, 3).join(" | ").slice(0, 200)}`
+          : "",
+        "",
+        `**Cash drag:** Switch #${monthCount + 1} this month. 2 more working days in cash.`,
+        "",
+        `👉 **Approve here:** ${appUrl}/approvals`,
+        `_Or do nothing — expires in 48h. Not switching is valid if current allocation already reflects the risk._`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 1900),
+      color: COLORS.red,
+    },
+    { urgent: true }
+  );
 
   return { orderId: orderRow.id };
 }
@@ -564,12 +602,15 @@ export async function processIlasSettlements(
         cursor = next.toISOString().split("T")[0];
         if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
       }
-      if (bizDaysOverdue >= 2) {
-        await sendDiscordAlert({
-          title: "🔴 ILAS Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
-          description: `Order ${order.id} (${portfolioType}) cannot settle: missing price for ${order.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA CorpWS source.`,
-          color: COLORS.red,
-        });
+      if (bizDaysOverdue >= 1) {
+        await sendDiscordAlert(
+          {
+            title: "🔴 ILAS Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz day" + (bizDaysOverdue === 1 ? "" : "s") + ")",
+            description: `Order ${order.id} (${portfolioType}) cannot settle: missing price for ${order.settlement_date}. ${bizDaysOverdue} business day${bizDaysOverdue === 1 ? "" : "s"} overdue — check AIA CorpWS source.`,
+            color: COLORS.red,
+          },
+          { urgent: true }
+        );
       }
       continue;
     }
@@ -628,10 +669,32 @@ export async function processIlasSettlements(
       blocked.push(
         `${order.id}: settle_ilas_switch error: ${settleErr.message}`
       );
+      // Settlement function crashed — urgent: shouldn't sit silent
+      await sendDiscordAlert(
+        {
+          title: "🔴 ILAS Settlement Function Failed",
+          description: `Order ${order.id} (${portfolioType}) crashed in settle_ilas_switch():\n\`${sanitizeError(settleErr.message)}\`\n\nPortfolio is stuck — investigate before next cron run.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
       continue;
     }
 
     settled.push(order.id);
+
+    // Settlement-success notification (info channel) — closes the visibility gap
+    await sendDiscordAlert({
+      title: `${order.is_emergency ? "🚨✅" : "✅"} ILAS Switch Settled${order.is_emergency ? " (Emergency)" : ""}`,
+      description: [
+        `Order \`${order.id}\` executed.`,
+        `**Portfolio:** ${portfolioType}`,
+        `**Settled:** ${order.settlement_date}`,
+        `**Cash drag:** ${cashDragDays} biz day${cashDragDays === 1 ? "" : "s"}`,
+        `**New NAV:** ${navValue.toFixed(4)}${dailyReturn ? ` (${dailyReturn >= 0 ? "+" : ""}${dailyReturn.toFixed(2)}%)` : ""}`,
+      ].join("\n"),
+      color: COLORS.green,
+    });
 
     // Backfill NAV rows from settlement_date+1 through today
     // (settlement may process days late due to AIA price publication lag)

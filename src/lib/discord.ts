@@ -15,22 +15,51 @@ const COLORS = {
   red: 15158332,
 } as const;
 
+interface SendOptions {
+  /**
+   * If true, route to DISCORD_WEBHOOK_URGENT_URL (#aia-alerts-urgent channel)
+   * and prepend @here mention so it pings the phone. Falls back to default
+   * webhook if the urgent URL is not configured.
+   */
+  urgent?: boolean;
+}
+
 /**
  * Send a Discord webhook message. Fails silently — never throws.
  * Error messages are sanitized to prevent leaking secrets.
+ *
+ * Two-tier routing:
+ *  - urgent: true  → DISCORD_WEBHOOK_URGENT_URL (with @here)
+ *  - urgent: false → DISCORD_WEBHOOK_URL (info channel, no mention)
  */
-export async function sendDiscordAlert(embed: DiscordEmbed): Promise<boolean> {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+export async function sendDiscordAlert(
+  embed: DiscordEmbed,
+  options: SendOptions = {}
+): Promise<boolean> {
+  const { urgent = false } = options;
+
+  const urgentUrl = process.env.DISCORD_WEBHOOK_URGENT_URL;
+  const infoUrl = process.env.DISCORD_WEBHOOK_URL;
+
+  // Pick channel: urgent → urgent webhook (fallback to info), otherwise info
+  const webhookUrl = urgent ? urgentUrl || infoUrl : infoUrl;
+
   if (!webhookUrl) {
-    console.warn("[discord] DISCORD_WEBHOOK_URL not set, skipping alert");
+    console.warn(
+      `[discord] No webhook URL set (urgent=${urgent}), skipping alert`
+    );
     return false;
   }
+
+  // @here mention only when we actually hit the urgent channel
+  const content = urgent && urgentUrl ? "@here" : undefined;
 
   try {
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ...(content ? { content, allowed_mentions: { parse: ["everyone"] } } : {}),
         embeds: [{ ...embed, timestamp: embed.timestamp || new Date().toISOString() }],
       }),
     });

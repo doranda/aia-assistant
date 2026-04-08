@@ -3,7 +3,7 @@
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendDiscordAlert, COLORS } from "@/lib/discord";
+import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 import {
   SETTLEMENT_DAYS,
   COOLDOWN_DAYS,
@@ -233,7 +233,21 @@ export async function submitSwitch(params: {
     .select("id")
     .single();
 
-  if (error) throw new Error(`Failed to insert switch: ${error.message}`);
+  if (error) {
+    // Unique constraint violation = another switch was submitted concurrently (race condition)
+    if (error.code === "23505") {
+      await sendDiscordAlert(
+        {
+          title: "🔴 MPF Switch Race Condition (23505)",
+          description: `Concurrent switch submission rejected by unique guard.\nDecision date: ${params.decisionDate}\n_Two callers fired at the same time — debate may have run twice._`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+      throw new Error("Switch rejected: another pending switch already exists (concurrent submission)");
+    }
+    throw new Error(`Failed to insert switch: ${error.message}`);
+  }
 
   // Insert sell transaction legs (units filled later when T+1 NAV available)
   for (const fund of params.oldAllocation) {
@@ -312,36 +326,61 @@ export async function requestEmergencySwitch(params: {
     .select("id")
     .single();
 
-  if (error) throw new Error(`Failed to insert emergency switch: ${error.message}`);
+  if (error) {
+    if (error.code === "23505") {
+      // CRITICAL: Emergency override does NOT bypass one-active-switch guard.
+      // If acc/dis already has a pending order, the emergency dies silently here.
+      // This is the hidden bug from the audit — surface it loudly.
+      await sendDiscordAlert(
+        {
+          title: "🔴 MPF Emergency Switch BLOCKED (23505)",
+          description: [
+            `Debate proposed an EMERGENCY override but a pending/awaiting switch already exists.`,
+            `Decision date: ${params.decisionDate}`,
+            ``,
+            `**The emergency move did NOT happen.** Either:`,
+            `1. Wait for the existing pending switch to settle, OR`,
+            `2. Manually clear it in Supabase \`mpf_pending_switches\` if you trust the new debate more.`,
+          ].join("\n"),
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+      throw new Error("Emergency switch rejected: another pending/awaiting switch already exists (concurrent submission)");
+    }
+    throw new Error(`Failed to insert emergency switch: ${error.message}`);
+  }
 
   // Discord alert with full context (truncate to fit 2000-char embed limit)
   const oldStr = formatAllocation(params.oldAllocation);
   const newStr = formatAllocation(params.newAllocation);
 
-  await sendDiscordAlert({
-    title: "🚨 Emergency Switch — Approval Required",
-    description: [
-      `**Within 7-day cooldown.** ${lastSwitchInfo}`,
-      "",
-      `**Current:** ${oldStr}`,
-      `**Proposed:** ${newStr}`,
-      "",
-      `**Why:** ${params.debateSummary.slice(0, 300)}`,
-      params.dangerSignals ? `**Danger signals:** ${params.dangerSignals.slice(0, 200)}` : "",
-      params.topNews.length > 0 ? `**Key news:** ${params.topNews.slice(0, 3).join(" | ").slice(0, 200)}` : "",
-      "",
-      `**Cash drag:** Switch #${monthCount + 1} this month. 2 more working days in cash.`,
-      "",
-      `**Option A:** Approve → POST /api/mpf/approve-switch`,
-      `Body: { "switch_id": "${switchRow.id}", "token": "${token}" }`,
-      `**Option B:** Do nothing — expires in 48h.`,
-      `_Not switching is valid if current allocation already reflects the risk._`,
-    ]
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, 1900),
-    color: COLORS.red,
-  });
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://aia-assistant.vercel.app";
+  await sendDiscordAlert(
+    {
+      title: "🚨 MPF Emergency Switch — Approval Required",
+      description: [
+        `**Within 7-day cooldown.** ${lastSwitchInfo}`,
+        "",
+        `**Current:** ${oldStr}`,
+        `**Proposed:** ${newStr}`,
+        "",
+        `**Why:** ${params.debateSummary.slice(0, 300)}`,
+        params.dangerSignals ? `**Danger signals:** ${params.dangerSignals.slice(0, 200)}` : "",
+        params.topNews.length > 0 ? `**Key news:** ${params.topNews.slice(0, 3).join(" | ").slice(0, 200)}` : "",
+        "",
+        `**Cash drag:** Switch #${monthCount + 1} this month. 2 more working days in cash.`,
+        "",
+        `👉 **Approve here:** ${appUrl}/approvals`,
+        `_Or do nothing — expires in 48h. Not switching is valid if current allocation already reflects the risk._`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 1900),
+      color: COLORS.red,
+    },
+    { urgent: true }
+  );
 
   return { switchId: switchRow.id };
 }
@@ -595,12 +634,15 @@ export async function processSettlements(): Promise<{
         cursor = next.toISOString().split("T")[0];
         if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
       }
-      if (bizDaysOverdue >= 4) {
-        await sendDiscordAlert({
-          title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
-          description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA price source.`,
-          color: COLORS.red,
-        });
+      if (bizDaysOverdue >= 1) {
+        await sendDiscordAlert(
+          {
+            title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz day" + (bizDaysOverdue === 1 ? "" : "s") + ")",
+            description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business day${bizDaysOverdue === 1 ? "" : "s"} overdue — check AIA price source.`,
+            color: COLORS.red,
+          },
+          { urgent: true }
+        );
       }
       continue;
     }
@@ -651,10 +693,31 @@ export async function processSettlements(): Promise<{
     if (settleErr) {
       console.error(`[portfolio-tracker] settle_switch failed for ${sw.id}:`, settleErr.message);
       blocked.push(`${sw.id}: settle_switch error: ${settleErr.message}`);
+      // Settlement function crashed (bad fund code, RLS, constraint, etc) — urgent: shouldn't sit silent
+      await sendDiscordAlert(
+        {
+          title: "🔴 MPF Settlement Function Failed",
+          description: `Switch ${sw.id} crashed in settle_switch():\n\`${sanitizeError(settleErr.message)}\`\n\nPortfolio is stuck — investigate before next cron run.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
       continue;
     }
 
     settled.push(sw.id);
+
+    // Settlement-success notification (info channel) — closes the visibility gap
+    await sendDiscordAlert({
+      title: `${sw.is_emergency ? "🚨✅" : "✅"} MPF Switch Settled${sw.is_emergency ? " (Emergency)" : ""}`,
+      description: [
+        `Switch \`${sw.id}\` executed.`,
+        `**Settled:** ${sw.settlement_date}`,
+        `**Cash drag:** ${cashDragDays} biz day${cashDragDays === 1 ? "" : "s"}`,
+        `**New NAV:** ${navValue.toFixed(4)}${dailyReturn ? ` (${dailyReturn >= 0 ? "+" : ""}${dailyReturn.toFixed(2)}%)` : ""}`,
+      ].join("\n"),
+      color: COLORS.green,
+    });
 
     // Backfill NAV rows from settlement_date+1 through today
     // (settlement may process days late due to AIA price publication lag)

@@ -141,7 +141,7 @@ export async function GET(req: Request) {
       title: "❌ ILAS Metrics Cron Failed",
       description: msg,
       color: COLORS.red,
-    }).catch(() => {});
+    }, { urgent: true }).catch(() => {});
 
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }

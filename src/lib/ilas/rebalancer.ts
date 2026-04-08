@@ -97,7 +97,7 @@ function detectIlasDangerSignals(metricsText: string, equityFundCount: number): 
   const signals: string[] = [];
 
   // Count equity funds with negative Sortino
-  const sortinoMatches = metricsText.match(/Sortino=(-[\d.]+)/g) || [];
+  const sortinoMatches = metricsText.match(/Sortino=([-\d.]+)/g) || [];
   const negSortino = sortinoMatches.filter(m => parseFloat(m.split("=")[1]) < 0).length;
   if (equityFundCount > 0 && negSortino / equityFundCount > 0.5) {
     signals.push("NEGATIVE SORTINO: >50% of equity funds have Sortino < 0");
@@ -176,6 +176,7 @@ export async function evaluateAndRebalanceIlas(
     .select("id")
     .or("type.eq.alert,type.eq.rebalance_debate")
     .eq("trigger", triggerTag)
+    .in("status", ["completed", "submitted"])
     .gte("created_at", todayISO);
   if (todayError) console.error(`${logPrefix} Failed to fetch today's rebalances:`, todayError);
 
@@ -192,6 +193,7 @@ export async function evaluateAndRebalanceIlas(
       .select("created_at")
       .or("type.eq.alert,type.eq.rebalance_debate")
       .eq("trigger", triggerTag)
+      .in("status", ["completed", "submitted"])
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
@@ -244,11 +246,14 @@ export async function evaluateAndRebalanceIlas(
     if (stalePct > 5) {
       const msg = `BLOCKED: stale price data for ${staleFunds.length} funds (${stalePct.toFixed(0)}%): ${staleFunds.slice(0, 10).join(", ")}${staleFunds.length > 10 ? "..." : ""}. Fix data pipeline before rebalancing.`;
       console.error(`${logPrefix} ${msg}`);
-      await sendDiscordAlert({
-        title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Stale Data)`,
-        description: `**${staleFunds.length}/${totalActive} funds** (${stalePct.toFixed(0)}%) have prices older than ${ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS} days:\n${staleFunds.slice(0, 10).join(", ")}\n\nRun the price cron or data backfill to fix.`,
-        color: COLORS.red,
-      });
+      await sendDiscordAlert(
+        {
+          title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Stale Data)`,
+          description: `**${staleFunds.length}/${totalActive} funds** (${stalePct.toFixed(0)}%) have prices older than ${ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS} days:\n${staleFunds.slice(0, 10).join(", ")}\n\nRun the price cron or data backfill to fix.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
       return { rebalanced: false, reason: msg };
     }
     if (staleFunds.length > 0) {
@@ -256,26 +261,14 @@ export async function evaluateAndRebalanceIlas(
     }
   }
 
-  // Check 2: Metrics coverage — 80% of active funds must have metrics (any period)
+  // Check 2: Metrics coverage — 80% of active funds must have 3y metrics
+  // Must match the period used in the actual metrics fetch below (period: "3y")
   const activeFundCodes = (activeFunds || []).map(f => f.fund_code);
-  // Try 1y first, fall back to since_launch for early-stage data
-  const { data: metricsCount1y } = await supabase
+  const { data: metricsCount, error: metricsCountError } = await supabase
     .from("ilas_fund_metrics")
     .select("fund_code")
-    .eq("period", "1y")
+    .eq("period", "3y")
     .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
-  const { data: metricsSL } = await supabase
-    .from("ilas_fund_metrics")
-    .select("fund_code")
-    .eq("period", "since_launch")
-    .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
-  // Union: fund has metrics if it has either period
-  const metricsSet = new Set([
-    ...(metricsCount1y || []).map(m => m.fund_code),
-    ...(metricsSL || []).map(m => m.fund_code),
-  ]);
-  const metricsCount = Array.from(metricsSet).map(fc => ({ fund_code: fc }));
-  const metricsCountError = null;
   if (metricsCountError) console.error(`${logPrefix} Failed to fetch metrics count:`, metricsCountError);
 
   const fundsWithMetrics = metricsCount?.length || 0;
@@ -284,11 +277,14 @@ export async function evaluateAndRebalanceIlas(
   if (coveragePct < ILAS_REBALANCER_CONFIG.METRICS_COVERAGE_PCT * 100) {
     const msg = `BLOCKED: insufficient metrics coverage (${fundsWithMetrics}/${totalActive} funds = ${coveragePct.toFixed(0)}%). Run metrics cron first.`;
     console.error(`${logPrefix} ${msg}`);
-    await sendDiscordAlert({
-      title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Missing Metrics)`,
-      description: `Only **${fundsWithMetrics}/${totalActive}** funds have 3Y metrics (need 80%+).\n\nRun the metrics cron to fix.`,
-      color: COLORS.red,
-    });
+    await sendDiscordAlert(
+      {
+        title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Missing Metrics)`,
+        description: `Only **${fundsWithMetrics}/${totalActive}** funds have 3Y metrics (need 80%+).\n\nRun the metrics cron to fix.`,
+        color: COLORS.red,
+      },
+      { urgent: true }
+    );
     return { rebalanced: false, reason: msg };
   }
 
@@ -462,6 +458,20 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
     return { rebalanced: false, reason: "Mediator proposed empty portfolio" };
   }
 
+  // ===== FUND CODE VALIDATION — reject unknown/inactive codes =====
+  const activeFundCodeSet = new Set((funds || []).map(f => f.fund_code));
+  const invalidCodes = newPortfolio.filter(p => !activeFundCodeSet.has(p.code)).map(p => p.code);
+  if (invalidCodes.length > 0) {
+    return { rebalanced: false, reason: `Mediator proposed unknown/inactive fund codes: ${invalidCodes.join(", ")}` };
+  }
+
+  // ===== DEDUP — merge duplicate fund codes by summing weights =====
+  const deduped = new Map<string, number>();
+  for (const p of newPortfolio) {
+    deduped.set(p.code, (deduped.get(p.code) || 0) + p.weight);
+  }
+  newPortfolio = Array.from(deduped.entries()).map(([code, weight]) => ({ code, weight }));
+
   // ===== SAFETY WARNING (not enforced — scoring feedback loop teaches agents to self-correct) =====
   if (dangerSignals) {
     const defensiveSet = new Set(defensiveFunds);
@@ -548,30 +558,33 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
     mediator.debate_log,
   ].join("\n");
 
-  // Insert insight FIRST to get the ID for linking
-  const { data: insightRow, error: insightInsertError } = await supabase.from("ilas_insights").insert({
-    type: "rebalance_debate",
-    trigger: triggerTag,
-    content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
-    content_zh: mediator.summary_zh,
-    fund_categories: [...new Set(activePortfolio.map(p => {
-      const fund = funds?.find(f => f.fund_code === p.code);
-      return fund?.category || "unknown";
-    }))],
-    status: "completed",
-    model: MODEL,
-  }).select("id").single();
-  if (insightInsertError) console.error(`${logPrefix} Failed to insert insight row:`, insightInsertError);
+  // Helper: insert insight row with given status
+  const fundCategories = [...new Set(activePortfolio.map(p => {
+    const fund = funds?.find(f => f.fund_code === p.code);
+    return fund?.category || "unknown";
+  }))];
+  const insertInsight = async (status: string) => {
+    const { data: row, error: err } = await supabase.from("ilas_insights").insert({
+      type: "rebalance_debate",
+      trigger: triggerTag,
+      content_en: `${mediator.summary_en}\n\n---\n\n${fullDebateLog}`,
+      content_zh: mediator.summary_zh,
+      fund_categories: fundCategories,
+      status,
+      model: MODEL,
+    }).select("id").single();
+    if (err) console.error(`${logPrefix} Failed to insert insight row:`, err);
+    return row?.id || null;
+  };
 
-  const insightId = insightRow?.id || null;
-
-  // Check switch gate
+  // Check switch gate BEFORE inserting insight (prevents poisoning rate limits)
   const gate = await canSubmitIlasSwitch(portfolioType);
   const today = new Date().toISOString().split("T")[0];
 
   if (!gate.allowed) {
     if (gate.canOverride) {
-      // Cooldown period — request emergency approval
+      // Cooldown period — insert insight for linking, then request emergency approval
+      const insightId = await insertInsight("pending_approval");
       const topNews = (recentNews || [])
         .filter((n: { is_high_impact: boolean }) => n.is_high_impact)
         .slice(0, 3)
@@ -597,7 +610,8 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
       };
     }
 
-    // Hard block (pending switch in progress)
+    // Hard block — insert with debate_only status (won't count toward rate limits)
+    const insightId = await insertInsight("debate_only");
     return {
       rebalanced: false,
       reason: gate.reason,
@@ -606,7 +620,8 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
     };
   }
 
-  // Gate passed — submit switch with T+1 settlement
+  // Gate passed — insert insight as completed, then submit switch with T+1 settlement
+  const insightId = await insertInsight("completed");
   const { orderId, sellDate, settlementDate } = await submitIlasSwitch({
     portfolioType,
     decisionDate: today,
