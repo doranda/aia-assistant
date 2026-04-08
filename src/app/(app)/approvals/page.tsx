@@ -10,7 +10,6 @@ interface MpfRow {
   is_emergency: boolean | null;
   decision_date: string;
   expires_at: string | null;
-  confirmation_token: string | null;
   old_allocation: unknown;
   new_allocation: unknown;
   created_at: string;
@@ -22,7 +21,6 @@ interface IlasRow {
   is_emergency: boolean | null;
   decision_date: string;
   expires_at: string | null;
-  confirmation_token: string | null;
   old_allocation: unknown;
   new_allocation: unknown;
   created_at: string;
@@ -37,29 +35,34 @@ async function getApprovalsData() {
 
   if (!user) return null;
 
-  // Admin gate
+  // Admin gate — fail closed on DB errors so admins aren't blocked by transient failures
   const { data: profile, error: profileError } = await admin
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .single();
-  if (profileError) console.error("[approvals] profile query failed:", profileError);
+  if (profileError) {
+    console.error("[approvals] profile query failed:", profileError);
+    return { dbError: true as const };
+  }
 
   if (profile?.role !== "admin") {
     return { unauthorized: true as const };
   }
 
-  // Fetch awaiting_approval rows from both engines
+  // Fetch awaiting_approval rows from both engines.
+  // NB: confirmation_token is intentionally NOT selected — the API endpoint
+  // resolves it server-side from admin session context.
   const { data: mpfRows, error: mpfErr } = await admin
     .from("mpf_pending_switches")
-    .select("id, is_emergency, decision_date, expires_at, confirmation_token, old_allocation, new_allocation, created_at")
+    .select("id, is_emergency, decision_date, expires_at, old_allocation, new_allocation, created_at")
     .eq("status", "awaiting_approval")
     .order("created_at", { ascending: false });
   if (mpfErr) console.error("[approvals] mpf query failed:", mpfErr);
 
   const { data: ilasRows, error: ilasErr } = await admin
     .from("ilas_portfolio_orders")
-    .select("id, portfolio_type, is_emergency, decision_date, expires_at, confirmation_token, old_allocation, new_allocation, created_at")
+    .select("id, portfolio_type, is_emergency, decision_date, expires_at, old_allocation, new_allocation, created_at")
     .eq("status", "awaiting_approval")
     .order("created_at", { ascending: false });
   if (ilasErr) console.error("[approvals] ilas query failed:", ilasErr);
@@ -74,7 +77,6 @@ async function getApprovalsData() {
       isEmergency: !!r.is_emergency,
       decisionDate: r.decision_date,
       expiresAt: r.expires_at,
-      token: r.confirmation_token || "",
       oldAllocation: r.old_allocation,
       newAllocation: r.new_allocation,
       createdAt: r.created_at,
@@ -89,7 +91,6 @@ async function getApprovalsData() {
       isEmergency: !!r.is_emergency,
       decisionDate: r.decision_date,
       expiresAt: r.expires_at,
-      token: r.confirmation_token || "",
       oldAllocation: r.old_allocation,
       newAllocation: r.new_allocation,
       createdAt: r.created_at,
@@ -99,7 +100,7 @@ async function getApprovalsData() {
   // Sort by createdAt desc (most recent first)
   items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
 
-  return { unauthorized: false as const, items };
+  return { unauthorized: false as const, dbError: false as const, items };
 }
 
 export default async function ApprovalsPage() {
@@ -107,6 +108,19 @@ export default async function ApprovalsPage() {
 
   if (!data) {
     redirect("/login");
+  }
+
+  if (data.dbError) {
+    return (
+      <main className="max-w-3xl mx-auto px-4 py-12">
+        <header className="mb-6">
+          <h1 className="text-2xl font-semibold text-zinc-50">Approvals</h1>
+        </header>
+        <div role="alert" className="rounded-lg border border-red-900/40 bg-red-950/20 p-4">
+          <p className="text-sm text-red-200">Could not verify your role. Please refresh — if this persists, the database is degraded.</p>
+        </div>
+      </main>
+    );
   }
 
   if (data.unauthorized) {

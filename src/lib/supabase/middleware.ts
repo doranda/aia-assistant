@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PROTECTED_ROUTES = [
   "/dashboard", "/mpf-care", "/ilas-track", "/chat",
-  "/documents", "/faqs", "/team",
+  "/documents", "/faqs", "/team", "/approvals",
   "/api/mpf/rebalance-history",
 ];
 

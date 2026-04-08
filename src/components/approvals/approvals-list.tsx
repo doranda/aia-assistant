@@ -12,7 +12,6 @@ export interface PendingItem {
   isEmergency: boolean;
   decisionDate: string;
   expiresAt: string | null;
-  token: string;
   oldAllocation: unknown;
   newAllocation: unknown;
   createdAt: string;
@@ -59,10 +58,11 @@ export function ApprovalsList({ items }: { items: PendingItem[] }) {
       item.engine === "mpf"
         ? "/api/mpf/approve-switch"
         : "/api/ilas/approve-switch";
+    // Token is resolved server-side from admin session — never sent from client
     const body =
       item.engine === "mpf"
-        ? { switch_id: item.id, token: item.token }
-        : { order_id: item.id, token: item.token };
+        ? { switch_id: item.id }
+        : { order_id: item.id };
 
     try {
       const res = await fetch(url, {
@@ -163,7 +163,7 @@ export function ApprovalsList({ items }: { items: PendingItem[] }) {
             <div className="flex gap-2">
               <Button
                 onClick={() => handleApprove(item)}
-                disabled={isBusy || isExpired || !item.token}
+                disabled={isBusy || isExpired}
                 className="flex-1 sm:flex-none min-h-11"
               >
                 {isBusy ? "Approving…" : isExpired ? "Expired" : "Approve"}
