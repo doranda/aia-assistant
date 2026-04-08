@@ -326,16 +326,30 @@ export async function evaluateAndRebalanceIlas(
     return { code: fund?.fund_code || "", name: fund?.name_en || "", weight: p.weight };
   });
 
-  // Get fund metrics (filtered to this portfolio's fund codes)
-  const { data: metrics, error: metricsError } = await supabase
+  // Get fund metrics (filtered to this portfolio's fund codes).
+  // Must match the coverage gate above: union 1y + since_launch (and 3y when
+  // available). Pick the longest period available per fund so agents get the
+  // most stable signal, falling back to shorter windows for newer funds.
+  const { data: allMetrics, error: metricsError } = await supabase
     .from("ilas_fund_metrics")
     .select("*")
-    .eq("period", "3y")
+    .in("period", ["3y", "1y", "since_launch"])
     .in("fund_code", activeFundCodes.length > 0 ? activeFundCodes : ["__none__"]);
   if (metricsError) console.error(`${logPrefix} Failed to fetch fund metrics:`, metricsError);
 
-  const metricsText = (metrics || []).map(m =>
-    `${m.fund_code}: Sortino=${m.sortino_ratio?.toFixed(2) ?? "N/A"}, Sharpe=${m.sharpe_ratio?.toFixed(2) ?? "N/A"}, MaxDD=${m.max_drawdown_pct !== null ? (m.max_drawdown_pct * 100).toFixed(1) + "%" : "N/A"}, CAGR=${m.annualized_return_pct !== null ? (m.annualized_return_pct * 100).toFixed(1) + "%" : "N/A"}, FER=${m.expense_ratio_pct?.toFixed(2) ?? "N/A"}%, Mom3M=${m.momentum_score !== null ? (m.momentum_score * 100).toFixed(1) + "%" : "N/A"}`
+  // Prefer 3y > 1y > since_launch per fund — longer windows are more stable
+  const PERIOD_PRIORITY: Record<string, number> = { "3y": 3, "1y": 2, "since_launch": 1 };
+  const bestMetricByFund = new Map<string, typeof allMetrics extends (infer U)[] | null ? U : never>();
+  for (const m of allMetrics || []) {
+    const existing = bestMetricByFund.get(m.fund_code);
+    if (!existing || (PERIOD_PRIORITY[m.period] || 0) > (PERIOD_PRIORITY[existing.period] || 0)) {
+      bestMetricByFund.set(m.fund_code, m);
+    }
+  }
+  const metrics = Array.from(bestMetricByFund.values());
+
+  const metricsText = metrics.map(m =>
+    `${m.fund_code} [${m.period}]: Sortino=${m.sortino_ratio?.toFixed(2) ?? "N/A"}, Sharpe=${m.sharpe_ratio?.toFixed(2) ?? "N/A"}, MaxDD=${m.max_drawdown_pct !== null ? (m.max_drawdown_pct * 100).toFixed(1) + "%" : "N/A"}, CAGR=${m.annualized_return_pct !== null ? (m.annualized_return_pct * 100).toFixed(1) + "%" : "N/A"}, FER=${m.expense_ratio_pct?.toFixed(2) ?? "N/A"}%, Mom3M=${m.momentum_score !== null ? (m.momentum_score * 100).toFixed(1) + "%" : "N/A"}`
   ).join("\n");
 
   // Get recent news (shared table — mpf_news)
