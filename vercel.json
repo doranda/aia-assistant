@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/mpf/cron/prices",
-      "schedule": "0 1 * * 1-5"
+      "schedule": "10 1 * * 1-5"
     },
     {
       "path": "/api/mpf/cron/metrics",
@@ -26,7 +26,7 @@
     },
     {
       "path": "/api/mpf/cron/portfolio-nav",
-      "schedule": "0 4 * * 1-5"
+      "schedule": "50 1 * * 1-5"
     },
     {
       "path": "/api/mpf/cron/monthly-report",
@@ -34,11 +34,11 @@
     },
     {
       "path": "/api/ilas/cron/prices",
-      "schedule": "15 1 * * 1-5"
+      "schedule": "20 1 * * 1-5"
     },
     {
       "path": "/api/ilas/cron/metrics",
-      "schedule": "45 1 * * 1-5"
+      "schedule": "40 1 * * 1-5"
     },
     {
       "path": "/api/ilas/cron/portfolio-nav",
