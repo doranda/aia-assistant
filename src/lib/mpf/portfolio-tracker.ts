@@ -649,11 +649,11 @@ export async function processSettlements(): Promise<{
         cursor = next.toISOString().split("T")[0];
         if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
       }
-      if (bizDaysOverdue >= 1) {
+      if (bizDaysOverdue >= 10) {
         await sendDiscordAlert(
           {
-            title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz day" + (bizDaysOverdue === 1 ? "" : "s") + ")",
-            description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business day${bizDaysOverdue === 1 ? "" : "s"} overdue — check AIA price source.`,
+            title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
+            description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA price source.`,
             color: COLORS.red,
           },
           { urgent: true }
