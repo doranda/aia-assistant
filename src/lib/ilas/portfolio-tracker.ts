@@ -454,6 +454,7 @@ export async function processIlasSettlements(
   portfolioType: IlasPortfolioType
 ): Promise<{
   settled: number;
+  executed: number;
   blocked: string[];
 }> {
   const supabase = createAdminClient();
@@ -469,23 +470,72 @@ export async function processIlasSettlements(
   if (dueError) throw new Error(`[ilas-tracker] processIlasSettlements dueOrders query: ${dueError.message}`);
 
   const settled: string[] = [];
+  const executed: string[] = [];
   const blocked: string[] = [];
 
-  // ARCHITECTURAL NOTE: AIA CorpWS price publication has a structural ~5 biz
-  // day lag. This is NORMAL for this data source, not an outage. We must NOT
-  // block settlements on NAV availability — the real-world AIA transaction
-  // happens on the scheduled settlement_date regardless of when prices publish.
-  //
-  // Current code waits for exact NAV before settling (see allNavsAvailable
-  // below). That is the interim behavior — orders sit in "pending" until
-  // prices catch up, then settle using real NAVs. This preserves money accuracy
-  // but means the DB state lags reality by ~5 biz days.
-  //
-  // FUTURE: optimistic settlement — mark executed on scheduled date with
-  // provisional/null NAVs, then a reconciliation cron backfills real NAVs
-  // when they publish. See docs/verify/2026-04-09-stale-price-gate.md.
+  // Optimistic settlement cutoff: rows created on or after this date use the
+  // new pending → executed → settled flow. Legacy rows keep the old
+  // pending → settled (NAV-wait) path.
+  const MIGRATION_CUTOFF = new Date('2026-04-10T00:00:00+08:00');
 
   for (const order of dueOrders || []) {
+    // ── NEW-ERA: optimistic execution (no NAV needed) ──────────────
+    if (new Date(order.created_at) >= MIGRATION_CUTOFF) {
+      // Mark as executed — the real-world AIA transaction happens on the
+      // scheduled settlement_date regardless of when prices publish.
+      // A separate reconciliation cron will backfill real NAVs later.
+      const { error: execErr } = await supabase
+        .from("ilas_portfolio_orders")
+        .update({ status: "executed", executed_at: new Date().toISOString() })
+        .eq("id", order.id);
+
+      if (execErr) {
+        console.error(`[ilas-settlement] executed update failed for ${order.id}:`, execErr.message);
+        blocked.push(`${order.id}: executed update error: ${execErr.message}`);
+        await sendDiscordAlert(
+          {
+            title: "🔴 ILAS Optimistic Execution Failed",
+            description: `Order ${order.id} (${portfolioType}) could not transition to executed:\n\`${sanitizeError(execErr.message)}\``,
+            color: COLORS.red,
+          },
+          { urgent: true }
+        );
+        continue;
+      }
+
+      // Write audit trail
+      const { error: auditErr } = await supabase
+        .from("state_transitions")
+        .insert({
+          table_name: "ilas_portfolio_orders",
+          row_id: order.id,
+          from_status: "pending",
+          to_status: "executed",
+          actor: "cron:ilas-portfolio-nav",
+          payload: { settlement_date: order.settlement_date, portfolio_type: portfolioType, trigger: "optimistic" },
+        });
+      if (auditErr) console.error(`[ilas-settlement] state_transitions insert failed for ${order.id}:`, auditErr.message);
+
+      executed.push(order.id);
+      console.log(`[ilas-settlement] ${order.id} (${portfolioType}) → executed (optimistic, settlement_date=${order.settlement_date})`);
+
+      await sendDiscordAlert({
+        title: "⚡ ILAS Switch Executed (Optimistic)",
+        description: [
+          `Order \`${order.id}\` moved to **executed**.`,
+          `**Portfolio:** ${portfolioType}`,
+          `**Settlement date:** ${order.settlement_date}`,
+          `NAV reconciliation pending — will settle when prices publish.`,
+        ].join("\n"),
+        color: COLORS.green,
+      });
+
+      continue; // skip legacy NAV-wait logic
+    }
+
+    // ── LEGACY: NAV-wait settlement (pending → settled) ────────────
+    // Rows created before the migration cutoff keep the old behavior:
+    // wait for exact NAVs, then settle atomically via settle_ilas_switch RPC.
     const newAlloc = order.new_allocation as FundAllocation[];
 
     // Check ALL buy NAVs are available (exact date required for settlement)
@@ -760,7 +810,7 @@ export async function processIlasSettlements(
     });
   }
 
-  return { settled: settled.length, blocked };
+  return { settled: settled.length, executed: executed.length, blocked };
 }
 
 // ===== 6. Daily NAV Computation =====

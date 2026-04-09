@@ -479,6 +479,7 @@ const getClosestNav = (fundCode: string, dateStr: string) =>
 
 export async function processSettlements(): Promise<{
   settled: number;
+  executed: number;
   blocked: string[];
 }> {
   const supabase = createAdminClient();
@@ -493,23 +494,71 @@ export async function processSettlements(): Promise<{
   if (dueError) throw new Error(`[mpf-tracker] processSettlements dueSwitches query: ${dueError.message}`);
 
   const settled: string[] = [];
+  const executed: string[] = [];
   const blocked: string[] = [];
 
-  // ARCHITECTURAL NOTE: AIA fund price publication has a structural ~5 biz day
-  // lag. This is NORMAL for this data source, not an outage. We must NOT block
-  // settlements on NAV availability — the real-world AIA transaction happens
-  // on the scheduled settlement_date regardless of when prices publish.
-  //
-  // Current code waits for exact NAV before settling (see allNavsAvailable
-  // below). That is the interim behavior — switches sit in "pending" until
-  // prices catch up, then settle using real NAVs. This preserves money accuracy
-  // but means the DB state lags reality by ~5 biz days.
-  //
-  // FUTURE: optimistic settlement — mark settled on scheduled date with
-  // provisional/null NAVs, then a reconciliation cron backfills real NAVs
-  // when they publish. See docs/verify/2026-04-09-stale-price-gate.md.
+  // Optimistic settlement cutoff: rows created on or after this date use the
+  // new pending → executed → settled flow. Legacy rows keep the old
+  // pending → settled (NAV-wait) path.
+  const MIGRATION_CUTOFF = new Date('2026-04-10T00:00:00+08:00');
 
   for (const sw of dueSwitches || []) {
+    // ── NEW-ERA: optimistic execution (no NAV needed) ──────────────
+    if (new Date(sw.created_at) >= MIGRATION_CUTOFF) {
+      // Mark as executed — the real-world AIA transaction happens on the
+      // scheduled settlement_date regardless of when prices publish.
+      // A separate reconciliation cron will backfill real NAVs later.
+      const { error: execErr } = await supabase
+        .from("mpf_pending_switches")
+        .update({ status: "executed", executed_at: new Date().toISOString() })
+        .eq("id", sw.id);
+
+      if (execErr) {
+        console.error(`[mpf-settlement] executed update failed for ${sw.id}:`, execErr.message);
+        blocked.push(`${sw.id}: executed update error: ${execErr.message}`);
+        await sendDiscordAlert(
+          {
+            title: "🔴 MPF Optimistic Execution Failed",
+            description: `Switch ${sw.id} could not transition to executed:\n\`${sanitizeError(execErr.message)}\``,
+            color: COLORS.red,
+          },
+          { urgent: true }
+        );
+        continue;
+      }
+
+      // Write audit trail
+      const { error: auditErr } = await supabase
+        .from("state_transitions")
+        .insert({
+          table_name: "mpf_pending_switches",
+          row_id: sw.id,
+          from_status: "pending",
+          to_status: "executed",
+          actor: "cron:mpf-portfolio-nav",
+          payload: { settlement_date: sw.settlement_date, trigger: "optimistic" },
+        });
+      if (auditErr) console.error(`[mpf-settlement] state_transitions insert failed for ${sw.id}:`, auditErr.message);
+
+      executed.push(sw.id);
+      console.log(`[mpf-settlement] ${sw.id} → executed (optimistic, settlement_date=${sw.settlement_date})`);
+
+      await sendDiscordAlert({
+        title: "⚡ MPF Switch Executed (Optimistic)",
+        description: [
+          `Switch \`${sw.id}\` moved to **executed**.`,
+          `**Settlement date:** ${sw.settlement_date}`,
+          `NAV reconciliation pending — will settle when prices publish.`,
+        ].join("\n"),
+        color: COLORS.green,
+      });
+
+      continue; // skip legacy NAV-wait logic
+    }
+
+    // ── LEGACY: NAV-wait settlement (pending → settled) ────────────
+    // Rows created before the migration cutoff keep the old behavior:
+    // wait for exact NAVs, then settle atomically via settle_switch RPC.
     const newAlloc = sw.new_allocation as FundAllocation[];
 
     // Check ALL buy NAVs are available (exact date required for settlement)
@@ -766,7 +815,7 @@ export async function processSettlements(): Promise<{
     });
   }
 
-  return { settled: settled.length, blocked };
+  return { settled: settled.length, executed: executed.length, blocked };
 }
 
 // ===== 7. Daily NAV Computation =====
