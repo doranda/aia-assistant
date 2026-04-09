@@ -24,11 +24,20 @@ import type {
 
 let holidayCache: Set<string> | null = null;
 
+/** For tests only — resets the module-level holiday cache. */
+export function _resetHolidayCacheForTests(): void {
+  holidayCache = null;
+}
+
 export async function loadHKHolidays(): Promise<Set<string>> {
   if (holidayCache) return holidayCache;
   const supabase = createAdminClient();
   const { data, error: holidayError } = await supabase.from("mpf_hk_holidays").select("date");
-  if (holidayError) console.error("[mpf-tracker] loadHKHolidays holidays query:", holidayError);
+  if (holidayError) {
+    throw new Error(
+      `[mpf-tracker] loadHKHolidays failed: ${holidayError.message ?? String(holidayError)}`
+    );
+  }
   holidayCache = new Set((data || []).map((h) => h.date));
   return holidayCache;
 }
