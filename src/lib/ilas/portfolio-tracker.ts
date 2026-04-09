@@ -9,8 +9,8 @@ import {
   loadHKHolidays,
   isWorkingDay,
   addWorkingDays,
-  getEffectiveDecisionDate,
-} from "@/lib/mpf/portfolio-tracker";
+} from "@/lib/portfolio/business-days";
+import { getEffectiveDecisionDate } from "@/lib/mpf/portfolio-tracker";
 import { formatIlasAllocation } from "./constants";
 import type { FundAllocation } from "./types";
 

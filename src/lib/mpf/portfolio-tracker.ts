@@ -2,6 +2,7 @@
 // Settlement model: Submit T → Sell T+1 NAV → Cash → Buy T+2 NAV (forward pricing)
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
+import { isWorkingDay, addWorkingDays } from "@/lib/portfolio/business-days";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 import {
@@ -40,29 +41,6 @@ export async function loadHKHolidays(): Promise<Set<string>> {
   }
   holidayCache = new Set((data || []).map((h) => h.date));
   return holidayCache;
-}
-
-export function isWorkingDay(dateStr: string, holidays: Set<string>): boolean {
-  const d = new Date(dateStr + "T00:00:00Z");
-  const day = d.getUTCDay();
-  if (day === 0 || day === 6) return false; // Sat/Sun
-  return !holidays.has(dateStr);
-}
-
-export function addWorkingDays(
-  startDate: string,
-  days: number,
-  holidays: Set<string>
-): string {
-  let current = startDate;
-  let added = 0;
-  while (added < days) {
-    const d = new Date(current + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() + 1);
-    current = d.toISOString().split("T")[0];
-    if (isWorkingDay(current, holidays)) added++;
-  }
-  return current;
 }
 
 /** If submitted after 3:30pm HKT cutoff, T = next working day */

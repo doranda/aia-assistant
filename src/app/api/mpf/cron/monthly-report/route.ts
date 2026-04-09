@@ -4,7 +4,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
-import { isWorkingDay, loadHKHolidays } from "@/lib/mpf/portfolio-tracker";
+import { isWorkingDay, loadHKHolidays } from "@/lib/portfolio/business-days";
 import { formatAllocation, FUND_CODE_TO_NAME } from "@/lib/mpf/constants";
 
 export const dynamic = "force-dynamic";

@@ -5,7 +5,7 @@ import {
   processIlasSettlements,
   computeAndStoreIlasNav,
 } from "@/lib/ilas/portfolio-tracker";
-import { isWorkingDay, loadHKHolidays } from "@/lib/mpf/portfolio-tracker";
+import { isWorkingDay, loadHKHolidays } from "@/lib/portfolio/business-days";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 export const maxDuration = 30;
