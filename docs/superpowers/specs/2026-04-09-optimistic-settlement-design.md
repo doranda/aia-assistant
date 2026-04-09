@@ -116,8 +116,10 @@ The `executed` state means: **"AIA has moved the money, we don't yet have the ex
 | `src/app/api/cron/reconcile-prices/route.ts` | New reconciliation cron |
 | `src/lib/agents/signal-promoter.ts` | Signal→proposal promotion logic |
 | `src/lib/portfolio/reconcile.ts` | Pure reconciliation math (DB-free, fully testable) |
-| `src/lib/portfolio/get-exact-nav.ts` | **NEW function** — `getExactNav(fundId, date)` returns the NAV row WHERE `date = $2` exactly, or `null`. Do NOT reuse `getClosestNav` (existing fn) — it returns the nearest-available NAV and will silently compute wrong units if used for reconciliation. Contract: exact match only, no fallback, no tolerance window. |
-| `tests/portfolio/get-exact-nav.test.ts` | Unit tests proving exact-match semantics: returns null for T+1 if only T is published; returns row for T if T is published; never returns T-1 for a T query |
+| `src/lib/portfolio/nav-lookup.ts` | **EXTRACTED & EXPORTED** — `getExactNav(fundId, date)` returns NAV row WHERE `date = $2` exactly, or `null`. `getClosestNav(fundId, date)` returns nearest-available NAV (preserved for existing backfill callers). Both functions currently exist as PRIVATE duplicates inside `src/lib/mpf/portfolio-tracker.ts:484` and `src/lib/ilas/portfolio-tracker.ts:78` — this extraction kills the DRY violation and makes them importable from the new reconcile cron. Reconcile cron must use `getExactNav` only; `getClosestNav` may silently return wrong-date NAVs and must NOT be used for reconciliation math. |
+| `src/lib/portfolio/business-days.ts` | **EXTRACTED** — `loadHKHolidays()`, `isWorkingDay()`, `addWorkingDays()`, `bizDaysBetween()`. Currently duplicated in MPF and ILAS trackers. `loadHKHolidays` must be hardened (P1): throw on Supabase error instead of returning empty set, log to Discord urgent channel, and retry once before giving up. |
+| `tests/portfolio/nav-lookup.test.ts` | Unit tests for exact-match semantics: returns null for T+1 if only T is published; returns row for T if T is published; never returns T-1 for a T query; distinguishes `getExactNav` from `getClosestNav` |
+| `tests/portfolio/business-days.test.ts` | Biz-day math tests including CNY week, weekends, and loadHKHolidays-fail scenario (must throw, not return empty) |
 | `tests/portfolio/state-gate.test.ts` | Unit tests for gate |
 | `tests/portfolio/reconcile.test.ts` | Unit tests for reconciliation math |
 | `tests/portfolio/frequency-check.test.ts` | Unit tests for 10-biz-day floor |
@@ -132,8 +134,10 @@ The `executed` state means: **"AIA has moved the money, we don't yet have the ex
 
 | File | Change |
 |---|---|
-| `src/app/api/cron/mpf-portfolio-nav/route.ts` | `processSettlements` writes `status='executed'` on scheduled date, no NAV dependency |
-| `src/app/api/cron/ilas-portfolio-nav/route.ts` | Same for `processIlasSettlements` |
+| `src/app/api/mpf/cron/portfolio-nav/route.ts` | `processSettlements` writes `status='executed'` on scheduled date, no NAV dependency. Actual path, not `src/app/api/cron/mpf-portfolio-nav/...` |
+| `src/app/api/ilas/cron/portfolio-nav/route.ts` | Same for `processIlasSettlements`. Actual path, not `src/app/api/cron/ilas-portfolio-nav/...` |
+| `src/lib/mpf/portfolio-tracker.ts` | Delete private `getExactNav`, `getClosestNav`, `loadHKHolidays`, `isWorkingDay`, `addWorkingDays`. Import from extracted modules instead. |
+| `src/lib/ilas/portfolio-tracker.ts` | Same deletes, same imports |
 | `src/lib/agents/quant-agent.ts` | First line: `if (!gate.canAct(userId)) return { blocked, reason }` |
 | `src/lib/agents/news-agent.ts` | During gap: emit `agent_signals` row instead of proposal |
 | `src/app/dashboard/portfolio-table.tsx` | `executed` state → amber pill + em-dashes |
