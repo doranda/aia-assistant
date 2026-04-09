@@ -29,6 +29,14 @@ Introduce an intermediate `executed` state. A switch moves `pending → executed
 
 The `executed` state means: **"AIA has moved the money, we don't yet have the exact numbers."** Agents respect this state via a central gatekeeper. Dashboard shows the state honestly. News-agent signals emitted during the gap are queued and promoted at reconciliation.
 
+## Prerequisites (must be fixed BEFORE this feature ships)
+
+| # | Prereq | Reason | Rollup |
+|---|---|---|---|
+| P1 | Fix `loadHKHolidays` Supabase error swallowing | Known bug from 2026-04-09 handoff. It swallows errors → empty holiday set → biz-day counter double-counts weekend-adjacent holidays. This feature's `estimatedSettledAt`, 10-biz-day floor, and reconciliation-overdue threshold ALL depend on correct biz-day math. Shipping on broken holiday load = wrong dates shown to users + cooldowns miscalculated. | Must be a blocking commit BEFORE migration |
+| P2 | Verify Supabase project timezone | Run `SHOW timezone;` in the project SQL console. Must match what the trigger SQL assumes. If it's UTC, the `'2026-04-10 00:00:00+08'::timestamptz` casts are safe. If it's `Asia/Hong_Kong`, bare date literals elsewhere in the codebase may already be HKT-local and need audit. | Pre-migration check |
+| P3 | Document current `getClosestNav` callers | Grep all usages. This feature adds `getExactNav` and reconciliation must NOT use the existing closest-match fn. Catalog prevents accidental reuse. | Pre-implementation audit |
+
 ## Decisions Locked (from brainstorming session)
 
 | ID | Decision | Rationale |
@@ -108,6 +116,8 @@ The `executed` state means: **"AIA has moved the money, we don't yet have the ex
 | `src/app/api/cron/reconcile-prices/route.ts` | New reconciliation cron |
 | `src/lib/agents/signal-promoter.ts` | Signal→proposal promotion logic |
 | `src/lib/portfolio/reconcile.ts` | Pure reconciliation math (DB-free, fully testable) |
+| `src/lib/portfolio/get-exact-nav.ts` | **NEW function** — `getExactNav(fundId, date)` returns the NAV row WHERE `date = $2` exactly, or `null`. Do NOT reuse `getClosestNav` (existing fn) — it returns the nearest-available NAV and will silently compute wrong units if used for reconciliation. Contract: exact match only, no fallback, no tolerance window. |
+| `tests/portfolio/get-exact-nav.test.ts` | Unit tests proving exact-match semantics: returns null for T+1 if only T is published; returns row for T if T is published; never returns T-1 for a T query |
 | `tests/portfolio/state-gate.test.ts` | Unit tests for gate |
 | `tests/portfolio/reconcile.test.ts` | Unit tests for reconciliation math |
 | `tests/portfolio/frequency-check.test.ts` | Unit tests for 10-biz-day floor |
@@ -127,7 +137,7 @@ The `executed` state means: **"AIA has moved the money, we don't yet have the ex
 | `src/lib/agents/quant-agent.ts` | First line: `if (!gate.canAct(userId)) return { blocked, reason }` |
 | `src/lib/agents/news-agent.ts` | During gap: emit `agent_signals` row instead of proposal |
 | `src/app/dashboard/portfolio-table.tsx` | `executed` state → amber pill + em-dashes |
-| `src/app/dashboard/total-value.tsx` | `Total: $X + N reconciling` sub-label |
+| `src/app/dashboard/total-value.tsx` | Sub-label shows ROW COUNT of reconciling positions, not HKD amount (HKD amount is unknown until reconciled). Format: `"Total: HKD 85,234 · 2 positions reconciling"` |
 | `src/lib/alerts/settlement-stuck.ts` | Threshold `>= 1` biz day → `>= 10` biz days |
 | `vercel.json` | Add `/api/cron/reconcile-prices` entry, runs daily 09:55 HKT (10 min after price cron) |
 
@@ -140,14 +150,23 @@ Legacy `pending → settled` direct code path in both portfolio-nav crons, once 
 ```typescript
 // src/lib/portfolio/state-gate.ts
 
-interface PortfolioStateGate {
-  canAct(userId: string): Promise<{ allowed: boolean; reason?: BlockReason }>;
+type ProductType = 'mpf' | 'ilas';
 
-  currentState(userId: string): Promise<{
+interface PortfolioStateGate {
+  // Product-scoped: MPF gap does NOT block ILAS actions and vice versa.
+  // Without productType, the gate is too broad and blocks all agent activity
+  // whenever any single product is reconciling.
+  canAct(userId: string, productType: ProductType): Promise<{
+    allowed: boolean;
+    reason?: BlockReason;
+  }>;
+
+  currentState(userId: string, productType: ProductType): Promise<{
     hasExecutedRows: boolean;
     executedFunds: string[];
     oldestExecutedAt: Date | null;
-    estimatedSettledAt: Date | null; // oldest + 6 biz days
+    estimatedSettledAt: Date | null; // oldest + 6 biz days (computed via HK calendar — see Prereq 1)
+    reconciliationOverdue: boolean; // true if oldestExecutedAt + 10 biz days has passed
   }>;
 
   frequencyCheck(fundId: string, userId: string): Promise<{
@@ -155,13 +174,107 @@ interface PortfolioStateGate {
     nextEligibleDate?: Date;
   }>;
 
-  reasonIfBlocked(userId: string): Promise<BlockReason | null>;
+  reasonIfBlocked(userId: string, productType: ProductType): Promise<BlockReason | null>;
 }
 
 type BlockReason =
-  | { type: 'awaiting_reconciliation'; executedFunds: string[]; estReady: Date }
+  | { type: 'awaiting_reconciliation'; productType: ProductType; executedFunds: string[]; estReady: Date }
+  | { type: 'reconciliation_overdue'; productType: ProductType; executedFunds: string[]; daysOverdue: number } // 10+ biz days stuck — escalate to human
   | { type: 'frequency_floor'; fundId: string; nextEligible: Date }
-  | { type: 'legacy_in_flight'; switchIds: string[] };
+  | { type: 'legacy_in_flight'; productType: ProductType; switchIds: string[] };
+
+type SignalType =
+  | 'bearish_region'       // news agent flagged bearish on a region/market
+  | 'bullish_region'       // flipside
+  | 'sector_rotation'      // news suggests rotating between sectors
+  | 'rate_change_signal'   // central bank rate / yield curve move
+  | 'macro_event';         // uncategorized macro news warranting review
+```
+
+### Database schema (definitive)
+
+```sql
+-- Status enum additions (add 'executed' between existing 'pending' and 'settled')
+ALTER TYPE switch_status ADD VALUE IF NOT EXISTS 'executed' BEFORE 'settled';
+
+-- Add executed_at column to both switch tables
+ALTER TABLE mpf_pending_switches ADD COLUMN IF NOT EXISTS executed_at timestamptz;
+ALTER TABLE mpf_pending_switches ADD COLUMN IF NOT EXISTS reconciled_at timestamptz;
+ALTER TABLE ilas_portfolio_orders ADD COLUMN IF NOT EXISTS executed_at timestamptz;
+ALTER TABLE ilas_portfolio_orders ADD COLUMN IF NOT EXISTS reconciled_at timestamptz;
+
+-- Agent signals queue
+CREATE TABLE agent_signals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  product_type text NOT NULL CHECK (product_type IN ('mpf', 'ilas')),
+  -- Optional parent row — a signal may or may not be tied to a specific
+  -- in-flight switch. If it IS tied, cascade with the parent.
+  mpf_switch_id uuid REFERENCES mpf_pending_switches(id) ON DELETE CASCADE,
+  ilas_order_id uuid REFERENCES ilas_portfolio_orders(id) ON DELETE CASCADE,
+  signal_type text NOT NULL CHECK (signal_type IN (
+    'bearish_region', 'bullish_region', 'sector_rotation',
+    'rate_change_signal', 'macro_event'
+  )),
+  payload jsonb NOT NULL, -- { region?, sector?, confidence: number 0..1, source_articles: string[] }
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'promoted', 'rejected', 'expired')),
+  emitted_at timestamptz NOT NULL DEFAULT now(),
+  consumed_at timestamptz,
+  rejection_reason text,
+  CONSTRAINT exactly_one_parent_or_none CHECK (
+    NOT (mpf_switch_id IS NOT NULL AND ilas_order_id IS NOT NULL)
+  )
+);
+
+CREATE INDEX idx_agent_signals_pending_by_user
+  ON agent_signals (user_id, product_type, emitted_at)
+  WHERE status = 'pending';
+
+-- Cancellation policy: when parent switch is CANCELLED (not deleted), the
+-- signals remain but are auto-expired. Enforced via trigger.
+CREATE OR REPLACE FUNCTION expire_signals_on_parent_cancel() RETURNS trigger AS $$
+BEGIN
+  IF NEW.status = 'cancelled' AND OLD.status != 'cancelled' THEN
+    UPDATE agent_signals
+      SET status = 'expired', consumed_at = now(), rejection_reason = 'parent_cancelled'
+      WHERE (
+        (TG_TABLE_NAME = 'mpf_pending_switches' AND mpf_switch_id = NEW.id) OR
+        (TG_TABLE_NAME = 'ilas_portfolio_orders' AND ilas_order_id = NEW.id)
+      ) AND status = 'pending';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER mpf_cancel_expires_signals
+  AFTER UPDATE OF status ON mpf_pending_switches
+  FOR EACH ROW EXECUTE FUNCTION expire_signals_on_parent_cancel();
+
+CREATE TRIGGER ilas_cancel_expires_signals
+  AFTER UPDATE OF status ON ilas_portfolio_orders
+  FOR EACH ROW EXECUTE FUNCTION expire_signals_on_parent_cancel();
+
+-- State transitions audit
+CREATE TABLE state_transitions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_name text NOT NULL CHECK (table_name IN ('mpf_pending_switches', 'ilas_portfolio_orders')),
+  row_id uuid NOT NULL,
+  from_status text NOT NULL,
+  to_status text NOT NULL,
+  -- actor format: 'cron:<endpoint-name>' | 'user:<uuid>' | 'admin:<email>' | 'system:migration'
+  actor text NOT NULL,
+  payload jsonb, -- optional: { before: row_snapshot, after: row_snapshot }
+  at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Prevent duplicate audit writes for the same transition on the same day.
+-- The :date cast handles cron retries within the same day; genuine same-day
+-- re-transitions (pending→executed→cancelled→pending? — illegal per trigger)
+-- cannot occur.
+CREATE UNIQUE INDEX idx_state_transitions_dedupe
+  ON state_transitions (table_name, row_id, from_status, to_status, ((at AT TIME ZONE 'Asia/Hong_Kong')::date));
+
+CREATE INDEX idx_state_transitions_row ON state_transitions (table_name, row_id, at DESC);
 ```
 
 ## Data Flow
@@ -187,15 +300,20 @@ T+3..T+6  reconcile-prices cron runs daily 09:55 HKT
      → getExactNav(fund, sell_date) + getExactNav(fund, settlement_date)
      → Both NULL → skip, try tomorrow
 
-T+7  reconcile-prices cron
-     → getExactNav succeeds for both dates
-     → Compute: sell_units × sell_nav = sell_total; buy_total / buy_nav = buy_units
-     → cash_drag_days = bizDaysBetween(sell_date, settlement_date)
-     → UPDATE status='settled', settled_at=now(), reconciled_at=now(), sell_nav_total, buy_nav_total, buy_units, cash_drag_days
-     → Correct historical mpf_portfolio_nav rows between [sell_date, today]
-     → If user's LAST executed row: signal-promoter runs
-          → SELECT agent_signals WHERE user_id=X AND status='pending'
-          → Hand to quant agent for evaluation
+T+7  reconcile-prices cron (Phase 1 — per-row reconciliation)
+     → For each row in SELECT ... FOR UPDATE SKIP LOCKED:
+          → getExactNav succeeds for both dates
+          → Compute: sell_units × sell_nav = sell_total; buy_total / buy_nav = buy_units
+          → cash_drag_days = bizDaysBetween(sell_date, settlement_date)
+          → UPDATE status='settled', settled_at=now(), reconciled_at=now(), sell_nav_total, buy_nav_total, buy_units, cash_drag_days
+          → Upsert historical mpf_portfolio_nav rows [sell_date, today] with ON CONFLICT DO NOTHING
+          → INSERT state_transitions row (dedupe index prevents duplicates)
+
+T+7  reconcile-prices cron (Phase 2 — per-user signal promotion, AFTER Phase 1 completes)
+     → SELECT DISTINCT user_id, product_type FROM rows_settled_this_run
+     → For each (user_id, product_type) pair where gate.canAct(userId, productType) is NOW true:
+          → SELECT agent_signals WHERE user_id=X AND product_type=Y AND status='pending' ORDER BY emitted_at
+          → Hand each signal to quant agent for evaluation
           → Endorse → proposal, OR reject with reason
           → Mark consumed_at=now(), status='promoted'|'rejected'
           → User sees debate thread in UI
@@ -263,8 +381,12 @@ BEGIN
   IF NOT (
     (OLD.status = 'pending'  AND NEW.status IN ('executed', 'cancelled')) OR
     (OLD.status = 'executed' AND NEW.status IN ('settled', 'cancelled'))  OR
-    (OLD.status = 'pending'  AND NEW.status = 'settled' AND OLD.created_at < '2026-04-10'::timestamptz)
-    -- last clause = LEGACY escape hatch. Delete after ~Apr 17 when legacy rows drained.
+    (OLD.status = 'pending'  AND NEW.status = 'settled' AND OLD.created_at < '2026-04-10 00:00:00+08'::timestamptz)
+    -- last clause = LEGACY escape hatch. Cutoff = 2026-04-10 00:00 HKT = 2026-04-09 16:00 UTC.
+    -- NEVER write this as bare '2026-04-10'::timestamptz — PostgreSQL resolves that to UTC midnight,
+    -- which is 8am HKT on Apr 10, creating an 8-hour window where new-era rows incorrectly take
+    -- the legacy path. Always explicit +08 offset.
+    -- Deletion gated on state, not time — see "Legacy escape hatch deletion" below.
   ) THEN
     RAISE EXCEPTION 'Illegal status transition: % → % on row %', OLD.status, NEW.status, NEW.id;
   END IF;
@@ -310,17 +432,160 @@ CREATE TRIGGER enforce_ilas_status_transition
 | Duplicate reconciliation (cron runs twice) | Idempotent, no-op | `WHERE reconciled_at IS NULL` filter |
 | Clock skew, scheduled_date > today | Cannot settle future rows | `WHERE scheduled_settlement_date <= CURRENT_DATE` |
 | Future-dated price row | Cannot be used | `getExactNav` filters `date <= current_business_date` |
-| Migration boundary race | Legacy path runs for row created 23:59:59.999 Apr 9 | Hard cutoff `created_at < '2026-04-10 00:00:00+08'::timestamptz` |
+| Migration boundary race | Legacy path runs for row created 23:59:59.999 Apr 9 HKT | Hard cutoff `created_at < '2026-04-10 00:00:00+08'::timestamptz` — explicit offset |
+| Duplicate reconcile cron invocation (Vercel retry, manual trigger) | Per-row work serialized via advisory lock; second invocation finds rows locked and skips them | `SELECT ... FOR UPDATE SKIP LOCKED` on each candidate row in a single txn; historical NAV correction uses `ON CONFLICT DO NOTHING` upsert keyed on `(portfolio_date, user_id, fund_id)` to prevent compounding corrections |
+| State_transitions audit duplicate writes | Unique constraint on `(table_name, row_id, from_status, to_status, at::date)` prevents two identical transition rows on the same day | Migration adds composite unique index |
+
+### Concurrency contract for reconcile cron
+
+```sql
+-- Inside reconcile-prices cron, per-row processing pattern:
+BEGIN;
+  SELECT id, user_id, fund_id, sell_date, settlement_date, buy_total
+  FROM mpf_pending_switches
+  WHERE status = 'executed' AND reconciled_at IS NULL
+  ORDER BY executed_at ASC
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED;
+  -- ... compute NAVs via getExactNav (not getClosestNav)
+  -- ... UPDATE row to settled
+  -- ... INSERT state_transitions row
+  -- ... upsert historical mpf_portfolio_nav rows with ON CONFLICT DO NOTHING
+COMMIT;
+```
+
+**Why `SKIP LOCKED` and not `NOWAIT`:** a second concurrent invocation should silently skip locked rows and move to the next candidate, not error. Skipped rows are picked up by whichever invocation finishes first.
+
+### Same-day execute+reconcile window
+
+The settlement cron (09:50 HKT) and reconcile cron (09:55 HKT) run 5 minutes apart. A row with `scheduled_settlement_date = today` transitions `pending → executed` at 09:50 and is immediately eligible for reconciliation at 09:55 on the same day.
+
+**Expected behavior:** do NOT reconcile on the same day a row was executed. Reconciliation must wait at least one calendar day. This prevents the reconcile cron from racing the settlement cron's transaction commit window, and matches AIA reality (NAVs are NEVER published on the same day as execution).
+
+**Filter on reconcile cron:**
+
+```sql
+SELECT ... FROM mpf_pending_switches
+WHERE status = 'executed'
+  AND reconciled_at IS NULL
+  AND executed_at < (now() AT TIME ZONE 'Asia/Hong_Kong')::date  -- strictly before today HKT
+FOR UPDATE SKIP LOCKED;
+```
+
+This also means the reconcile cron can safely run at any time without overlapping the settlement cron's window.
+
+### Legacy escape hatch deletion (state-gated, not time-gated)
+
+The trigger's legacy clause `(OLD.status = 'pending' AND NEW.status = 'settled' AND OLD.created_at < '2026-04-10 00:00:00+08'::timestamptz)` must be removed eventually, but NOT on a date — on a state check.
+
+**Deletion migration:**
+
+```sql
+-- supabase/migrations/YYYYMMDD_drop_legacy_escape_hatch.sql
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM mpf_pending_switches
+    WHERE status IN ('pending', 'executed')
+      AND created_at < '2026-04-10 00:00:00+08'::timestamptz
+  ) OR EXISTS (
+    SELECT 1 FROM ilas_portfolio_orders
+    WHERE status IN ('pending', 'executed')
+      AND created_at < '2026-04-10 00:00:00+08'::timestamptz
+  ) THEN
+    RAISE EXCEPTION 'Legacy rows still in flight — refusing to remove escape hatch. Run SELECT * FROM mpf_pending_switches WHERE created_at < ''2026-04-10 00:00:00+08''::timestamptz to inspect.';
+  END IF;
+END $$;
+
+-- Only reached if no legacy rows remain in non-terminal states
+CREATE OR REPLACE FUNCTION enforce_status_transition() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status = NEW.status THEN RETURN NEW; END IF;
+  IF NOT (
+    (OLD.status = 'pending'  AND NEW.status IN ('executed', 'cancelled')) OR
+    (OLD.status = 'executed' AND NEW.status IN ('settled', 'cancelled'))
+    -- legacy escape hatch REMOVED
+  ) THEN
+    RAISE EXCEPTION 'Illegal status transition: % → % on row %', OLD.status, NEW.status, NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+Run this migration any time after legacy rows drain. If it raises, wait longer. Never delete by calendar date.
 
 ### Rollback plan
 
-1. Disable reconcile-prices cron (remove `vercel.json` entry, redeploy ~90s)
-2. Revert settlement crons to old path (single commit revert)
-3. Leave `executed` rows in place — manual SQL to fix to `settled` with hand-computed NAVs
-4. Keep DB migration — additive, safe to leave
-5. Re-deploy ~5 min total
+**Rollback triggers on:**
+- Production incident with money impact (wrong units, missing settlements, phantom rows)
+- `verify-aia --quick` smoke failure in prod within 1 hour of deploy
+- Any exception from `enforce_status_transition` trigger in the first 24 hours (indicates a code path is writing illegal transitions)
 
-**Data at risk during rollback window:** switches that transitioned to `executed` between deploy and rollback. Expected 0-2/day. Each recoverable via SQL.
+**Steps:**
+
+1. **Disable reconcile-prices cron** — remove entry from `vercel.json`, redeploy (~90s)
+2. **Revert settlement crons** — `git revert <commit>` on the refactor commit for `processSettlements`/`processIlasSettlements`, push, redeploy (~3 min)
+3. **Fix stuck `executed` rows with the template below** — use the SQL template, don't improvise
+4. **Keep DB migration in place** — the new columns, tables, and triggers are additive and safe; only the legacy escape hatch in the trigger keeps working
+5. **If rollback happens AFTER legacy hatch deletion migration has been applied** — re-apply the trigger with the legacy clause restored (copy from this spec). This is the only path where the trigger needs a roll-forward fix.
+
+**Stuck row SQL template (for step 3):**
+
+```sql
+-- Pre-condition: AIA has published NAVs for sell_date and settlement_date.
+-- Look up the NAVs manually from mpf_prices / ilas_prices.
+--
+-- For each stuck row, run the following in a transaction.
+-- Substitute the :params with actual values.
+
+BEGIN;
+
+-- 1. Verify the row is actually stuck and not already fixed
+SELECT id, status, executed_at, sell_fund_id, buy_fund_id, sell_date, settlement_date, sell_units_input, buy_amount_input
+FROM mpf_pending_switches
+WHERE id = :row_id AND status = 'executed';
+-- Must return 1 row. If 0 → already fixed, abort.
+
+-- 2. Look up NAVs
+SELECT fund_id, date, nav FROM mpf_prices
+WHERE (fund_id = :sell_fund_id AND date = :sell_date)
+   OR (fund_id = :buy_fund_id AND date = :settlement_date);
+-- Must return 2 rows. If not → NAVs still not published, wait.
+
+-- 3. Compute: sell_nav_total = sell_units_input × sell_nav
+--    buy_units = buy_amount_input / buy_nav (typically = sell_nav_total / buy_nav)
+--    cash_drag_days = business days between sell_date and settlement_date
+
+-- 4. Update the row atomically
+UPDATE mpf_pending_switches
+SET status = 'settled',
+    settled_at = now(),
+    reconciled_at = now(),
+    sell_nav_total = :computed_sell_total,
+    buy_nav_total = :computed_buy_total,
+    buy_units = :computed_buy_units,
+    cash_drag_days = :computed_cash_drag
+WHERE id = :row_id AND status = 'executed'; -- defense: double check status
+
+-- 5. Audit the manual transition
+INSERT INTO state_transitions (table_name, row_id, from_status, to_status, actor, payload)
+VALUES (
+  'mpf_pending_switches', :row_id, 'executed', 'settled',
+  'admin:' || current_user,
+  jsonb_build_object('reason', 'manual rollback reconciliation', 'sell_nav', :sell_nav, 'buy_nav', :buy_nav)
+);
+
+-- 6. Backfill historical portfolio NAV rows (if needed)
+-- Use the existing portfolio-nav historical backfill helper, not raw SQL.
+-- (Running raw UPSERTs here is error-prone; the helper has tested math.)
+
+COMMIT;
+
+-- Repeat for ILAS with ilas_portfolio_orders and ilas_prices.
+```
+
+**Data at risk during rollback window:** switches that transitioned to `executed` between deploy and rollback. Expected 0-2/day based on historical cadence. Each recoverable via the template above. Max realistic: ~10 rows if rollback happens after a week of silent failure.
 
 ## Testing Strategy
 
@@ -341,7 +606,8 @@ CREATE TRIGGER enforce_ilas_status_transition
 | `settlement-e2e.test.ts` | Seed pending → time-travel to scheduled date → run cron → assert executed → seed NAVs → run reconcile → assert settled with correct units |
 | `agent-gate-e2e.test.ts` | Executed row exists → quant blocked → news writes signal → mark settled → quant unblocked → signal promoted |
 | `legacy-path.test.ts` | `created_at='2026-04-09'` → old path runs, not new path |
-| `frequency-floor-e2e.test.ts` | Settle switch → try again 5 bd later (blocked) → wait 10 bd (allowed) |
+| `frequency-floor-e2e.test.ts` | Settle switch → try again 5 bd later (blocked) → wait 10 bd (allowed). **Must include a scenario spanning CNY week** (7+ consecutive HK holidays) — this is the highest-risk biz-day miscount window |
+| `cross-product-isolation.test.ts` | Seed MPF executed row + ILAS pending row for same user. Assert `gate.canAct(user, 'ilas')` = allowed, `gate.canAct(user, 'mpf')` = blocked. Assert ILAS settlement cron still runs on the ILAS row despite MPF being stuck |
 
 ### Stress tests (audit subagent post-implementation)
 
@@ -388,6 +654,10 @@ CREATE TRIGGER enforce_ilas_status_transition
 - **Cancellation of in-flight `executed` switches** — AIA doesn't allow cancellation after execution; no user-facing cancel button on this state.
 - **Multi-currency reconciliation** — current design is HKD-only, matching existing scope.
 - **Historical migration of pre-2026 switches** — out of scope, legacy data stays as-is.
+- **Signal-promoter endorsement-rate dashboard** — metric collection only (in logs). Any UI panel showing endorsement % is out of scope for this phase.
+- **User-facing signal history view** — the debate trail is visible via audit logs + `state_transitions`, not a dedicated UI. Dedicated UI is deferred.
+- **AIA NAV correction handling (post-publication revisions)** — if AIA publishes a NAV and later revises it, this phase assumes the first publication is final. Correction handling is a future phase.
+- **Supabase PITR / time-travel restore testing** — rollback plan assumes forward-only fixes, not DB-level restore.
 
 ## Success Criteria
 
