@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
+import { runReconciliationAlerts } from "@/lib/portfolio/reconciliation-alerts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -75,11 +76,23 @@ export async function GET(req: NextRequest) {
       subErrors.push(`mpf_pending_switches (active): ${mpfActiveErr.message}`);
     }
 
+    // Executed rows — awaiting NAV reconciliation (new optimistic settlement state)
+    const { data: mpfExecutedRows, error: mpfExecutedErr } = await supabase
+      .from("mpf_pending_switches")
+      .select("id, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
+      .eq("status", "executed")
+      .is("reconciled_at", null);
+    if (mpfExecutedErr) {
+      console.error("[daily-digest] mpf executed query failed:", mpfExecutedErr);
+      subErrors.push(`mpf_pending_switches (executed): ${mpfExecutedErr.message}`);
+    }
+
     const mpfSettled = (mpfSettledRows || []) as SwitchRow[];
     const mpfActive = (mpfActiveRows || []) as SwitchRow[];
+    const mpfExecuted = (mpfExecutedRows || []) as SwitchRow[];
     const mpfPending = mpfActive.filter((r) => r.status === "pending");
     const mpfAwaiting = mpfActive.filter((r) => r.status === "awaiting_approval");
-    const mpfEmergency = [...mpfSettled, ...mpfActive].filter((r) => r.is_emergency);
+    const mpfEmergency = [...mpfSettled, ...mpfActive, ...mpfExecuted].filter((r) => r.is_emergency);
 
     // Most recent NAV row
     const { data: mpfNavRow, error: mpfNavErr } = await supabase
@@ -98,7 +111,7 @@ export async function GET(req: NextRequest) {
     const { data: ilasSettledRows, error: ilasSettledErr } = await supabase
       .from("ilas_portfolio_orders")
       .select("id, portfolio_type, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
-      .eq("status", "executed")
+      .eq("status", "settled")
       .gte("settled_at", since);
     if (ilasSettledErr) {
       console.error("[daily-digest] ilas settled query failed:", ilasSettledErr);
@@ -115,9 +128,21 @@ export async function GET(req: NextRequest) {
       subErrors.push(`ilas_portfolio_orders (active): ${ilasActiveErr.message}`);
     }
 
+    // Executed rows — awaiting NAV reconciliation
+    const { data: ilasExecutedRows, error: ilasExecutedErr } = await supabase
+      .from("ilas_portfolio_orders")
+      .select("id, portfolio_type, status, is_emergency, decision_date, settlement_date, settled_at, expires_at")
+      .eq("status", "executed")
+      .is("reconciled_at", null);
+    if (ilasExecutedErr) {
+      console.error("[daily-digest] ilas executed query failed:", ilasExecutedErr);
+      subErrors.push(`ilas_portfolio_orders (executed): ${ilasExecutedErr.message}`);
+    }
+
     const ilasSettled = (ilasSettledRows || []) as IlasOrderRow[];
     const ilasActive = (ilasActiveRows || []) as IlasOrderRow[];
-    const ilas = [...ilasSettled, ...ilasActive];
+    const ilasExecuted = (ilasExecutedRows || []) as IlasOrderRow[];
+    const ilas = [...ilasSettled, ...ilasActive, ...ilasExecuted];
     const ilasPending = ilasActive.filter((r) => r.status === "pending");
     const ilasAwaiting = ilasActive.filter((r) => r.status === "awaiting_approval");
     const ilasEmergency = ilas.filter((r) => r.is_emergency);
@@ -137,6 +162,7 @@ export async function GET(req: NextRequest) {
     lines.push(
       `• Settled (24h): **${mpfSettled.length}**${mpfSettled.length > 0 ? ` ${mpfSettled.map((r) => r.id.slice(0, 8)).join(", ")}` : ""}`
     );
+    lines.push(`• Executed (awaiting NAV): **${mpfExecuted.length}**${mpfExecuted.length > 0 ? ` — typical 4-6 biz days` : ""}`);
     lines.push(`• Pending: **${mpfPending.length}**${mpfPending.length > 0 ? ` (next: ${mpfPending[0].settlement_date})` : ""}`);
     lines.push(`• Awaiting approval: **${mpfAwaiting.length}**${mpfAwaiting.length > 0 ? ` ⚠️ check approval link` : ""}`);
     if (mpfEmergency.length > 0) {
@@ -148,14 +174,16 @@ export async function GET(req: NextRequest) {
     // ILAS section
     lines.push("**📊 ILAS Track**");
     const accSettled = ilasSettled.filter((r) => r.portfolio_type === "accumulation");
+    const accExecuted = ilasExecuted.filter((r) => r.portfolio_type === "accumulation");
     const accPending = ilasPending.filter((r) => r.portfolio_type === "accumulation");
     const accAwaiting = ilasAwaiting.filter((r) => r.portfolio_type === "accumulation");
     const disSettled = ilasSettled.filter((r) => r.portfolio_type === "distribution");
+    const disExecuted = ilasExecuted.filter((r) => r.portfolio_type === "distribution");
     const disPending = ilasPending.filter((r) => r.portfolio_type === "distribution");
     const disAwaiting = ilasAwaiting.filter((r) => r.portfolio_type === "distribution");
 
-    lines.push(`• Accumulation — settled: ${accSettled.length}, pending: ${accPending.length}, awaiting: ${accAwaiting.length}`);
-    lines.push(`• Distribution — settled: ${disSettled.length}, pending: ${disPending.length}, awaiting: ${disAwaiting.length}`);
+    lines.push(`• Accumulation — settled: ${accSettled.length}, executed: ${accExecuted.length}, pending: ${accPending.length}, awaiting: ${accAwaiting.length}`);
+    lines.push(`• Distribution — settled: ${disSettled.length}, executed: ${disExecuted.length}, pending: ${disPending.length}, awaiting: ${disAwaiting.length}`);
     if (ilasEmergency.length > 0) {
       lines.push(`• 🚨 Emergency moves in window: ${ilasEmergency.length}`);
     }
@@ -163,7 +191,7 @@ export async function GET(req: NextRequest) {
     lines.push("");
 
     // Health note — if everything is zero, system is quiet
-    const totalActivity = mpfSettled.length + mpfPending.length + mpfAwaiting.length + ilasSettled.length + ilasPending.length + ilasAwaiting.length;
+    const totalActivity = mpfSettled.length + mpfExecuted.length + mpfPending.length + mpfAwaiting.length + ilasSettled.length + ilasExecuted.length + ilasPending.length + ilasAwaiting.length;
     if (totalActivity === 0) {
       lines.push("_System quiet — no activity in the last 24h._");
     }
@@ -202,21 +230,33 @@ export async function GET(req: NextRequest) {
       color: degraded ? COLORS.yellow : COLORS.green,
     });
 
+    // Run reconciliation alerts for executed rows stuck too long
+    let reconAlerts = { warned: 0, urgent: 0 };
+    try {
+      reconAlerts = await runReconciliationAlerts();
+    } catch (reconErr) {
+      console.error("[daily-digest] reconciliation alerts failed:", reconErr);
+    }
+
     return NextResponse.json({
       ok: true,
       degraded,
       subErrors: subErrors.length,
+      reconAlerts,
       date: todayHK,
       mpf: {
         settled: mpfSettled.length,
+        executed: mpfExecuted.length,
         pending: mpfPending.length,
         awaiting: mpfAwaiting.length,
         emergency: mpfEmergency.length,
       },
       ilas: {
         accSettled: accSettled.length,
+        accExecuted: accExecuted.length,
         accPending: accPending.length,
         disSettled: disSettled.length,
+        disExecuted: disExecuted.length,
         disPending: disPending.length,
         emergency: ilasEmergency.length,
       },

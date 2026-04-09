@@ -4,9 +4,8 @@ import {
   processSettlements,
   computeAndStoreNav,
   expireStaleRequests,
-  isWorkingDay,
-  loadHKHolidays,
 } from "@/lib/mpf/portfolio-tracker";
+import { isWorkingDay, loadHKHolidays } from "@/lib/portfolio/business-days";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 export const maxDuration = 120;
@@ -32,7 +31,8 @@ export async function GET(req: NextRequest) {
     const expired = await expireStaleRequests();
 
     // Step 2: Process settlements (atomic via Postgres function)
-    const { settled, blocked } = await processSettlements();
+    // settled = legacy NAV-wait settlements, executed = optimistic executions
+    const { settled, executed, blocked } = await processSettlements();
 
     // Step 3: Compute and store today's portfolio NAV
     const { nav, isCash } = await computeAndStoreNav(today);
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     const { data: monthSwitches, error: switchErr } = await supabase
       .from("mpf_pending_switches")
       .select("id")
-      .in("status", ["pending", "settled"])
+      .in("status", ["pending", "executed", "settled"])
       .gte("created_at", monthStart);
     if (switchErr) console.error("[portfolio-nav] monthSwitches query failed:", switchErr);
     const monthCount = monthSwitches?.length || 0;
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
     const { error: runLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "portfolio_nav",
       status: "success",
-      records_processed: settled + (nav > 0 ? 1 : 0),
+      records_processed: settled + executed + (nav > 0 ? 1 : 0),
       duration_ms: Date.now() - t0,
     });
     if (runLogErr) console.error("[cron/portfolio-nav] Failed to log success run:", runLogErr);
@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
       nav: Number(nav.toFixed(6)),
       isCash,
       settled,
+      executed,
       blocked: blocked.length,
       expired,
       monthSwitches: monthCount,

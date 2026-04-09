@@ -5,7 +5,7 @@ import {
   processIlasSettlements,
   computeAndStoreIlasNav,
 } from "@/lib/ilas/portfolio-tracker";
-import { isWorkingDay, loadHKHolidays } from "@/lib/mpf/portfolio-tracker";
+import { isWorkingDay, loadHKHolidays } from "@/lib/portfolio/business-days";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 export const maxDuration = 30;
@@ -40,12 +40,13 @@ export async function GET(req: NextRequest) {
 
     // Log heartbeat
     const totalSettled = accSettled.settled + disSettled.settled;
+    const totalExecuted = accSettled.executed + disSettled.executed;
     const navCount = (accNav.nav > 0 ? 1 : 0) + (disNav.nav > 0 ? 1 : 0);
 
     const { error: runLogErr } = await supabase.from("scraper_runs").insert({
       scraper_name: "ilas_portfolio_nav",
       status: "success",
-      records_processed: totalSettled + navCount,
+      records_processed: totalSettled + totalExecuted + navCount,
       duration_ms: Date.now() - t0,
     });
     if (runLogErr) console.error("[cron/ilas-portfolio-nav] Failed to log success run:", runLogErr);
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
         nav: Number(accNav.nav.toFixed(6)),
         isCash: accNav.isCash,
         settled: accSettled.settled,
+        executed: accSettled.executed,
         blocked: accSettled.blocked.length,
         expired: accExpired,
       },
@@ -70,6 +72,7 @@ export async function GET(req: NextRequest) {
         nav: Number(disNav.nav.toFixed(6)),
         isCash: disNav.isCash,
         settled: disSettled.settled,
+        executed: disSettled.executed,
         blocked: disSettled.blocked.length,
         expired: disExpired,
       },

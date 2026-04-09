@@ -2,6 +2,11 @@
 // Settlement model: Submit T → Sell T+1 NAV → Cash → Buy T+2 NAV (forward pricing)
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
+import { isWorkingDay, addWorkingDays } from "@/lib/portfolio/business-days";
+import {
+  getExactNav as sharedGetExactNav,
+  getClosestNav as sharedGetClosestNav,
+} from "@/lib/portfolio/nav-lookup";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 import {
@@ -24,36 +29,22 @@ import type {
 
 let holidayCache: Set<string> | null = null;
 
+/** For tests only — resets the module-level holiday cache. */
+export function _resetHolidayCacheForTests(): void {
+  holidayCache = null;
+}
+
 export async function loadHKHolidays(): Promise<Set<string>> {
   if (holidayCache) return holidayCache;
   const supabase = createAdminClient();
   const { data, error: holidayError } = await supabase.from("mpf_hk_holidays").select("date");
-  if (holidayError) console.error("[mpf-tracker] loadHKHolidays holidays query:", holidayError);
+  if (holidayError) {
+    throw new Error(
+      `[mpf-tracker] loadHKHolidays failed: ${holidayError.message ?? String(holidayError)}`
+    );
+  }
   holidayCache = new Set((data || []).map((h) => h.date));
   return holidayCache;
-}
-
-export function isWorkingDay(dateStr: string, holidays: Set<string>): boolean {
-  const d = new Date(dateStr + "T00:00:00Z");
-  const day = d.getUTCDay();
-  if (day === 0 || day === 6) return false; // Sat/Sun
-  return !holidays.has(dateStr);
-}
-
-export function addWorkingDays(
-  startDate: string,
-  days: number,
-  holidays: Set<string>
-): string {
-  let current = startDate;
-  let added = 0;
-  while (added < days) {
-    const d = new Date(current + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() + 1);
-    current = d.toISOString().split("T")[0];
-    if (isWorkingDay(current, holidays)) added++;
-  }
-  return current;
 }
 
 /** If submitted after 3:30pm HKT cutoff, T = next working day */
@@ -109,15 +100,18 @@ export async function canSubmitSwitch(): Promise<SwitchGateResult> {
   const { data: active, error: activeError } = await supabase
     .from("mpf_pending_switches")
     .select("*")
-    .in("status", ["pending", "awaiting_approval"])
+    .in("status", ["pending", "awaiting_approval", "executed"])
     .limit(1)
     .single();
   if (activeError) console.error("[mpf-tracker] canSubmitSwitch active switch query:", activeError);
 
   if (active) {
+    const statusMsg = active.status === "executed"
+      ? "executed, awaiting NAV reconciliation (~4-6 biz days)"
+      : active.status === "pending" ? `settles ${active.settlement_date}` : `awaiting approval, expires ${active.expires_at}`;
     return {
       allowed: false,
-      reason: `Switch ${active.status}: ${active.status === "pending" ? `settles ${active.settlement_date}` : `awaiting approval, expires ${active.expires_at}`}`,
+      reason: `Switch ${active.status}: ${statusMsg}`,
       pendingSwitch: active as PendingSwitch,
     };
   }
@@ -480,60 +474,15 @@ export async function expireStaleRequests(): Promise<number> {
 
 // ===== 6. Settlement Processing =====
 
-/** Find exact-date NAV. Returns null if no exact match (does NOT fall back). */
-async function getExactNav(
-  fundCode: string,
-  dateStr: string
-): Promise<number | null> {
-  const supabase = createAdminClient();
-  const { data: fund, error: fundError } = await supabase
-    .from("mpf_funds")
-    .select("id")
-    .eq("fund_code", fundCode)
-    .single();
-  if (fundError) console.error("[mpf-tracker] getExactNav fund lookup:", fundError);
-  if (!fund) return null;
-
-  const { data: price, error: priceError } = await supabase
-    .from("mpf_prices")
-    .select("nav")
-    .eq("fund_id", fund.id)
-    .eq("date", dateStr)
-    .single();
-  if (priceError) console.error("[mpf-tracker] getExactNav price lookup:", priceError);
-
-  return price ? Number(price.nav) : null;
-}
-
-/** Find closest NAV on or before date (for daily NAV computation, not settlement) */
-async function getClosestNav(
-  fundCode: string,
-  dateStr: string
-): Promise<number | null> {
-  const supabase = createAdminClient();
-  const { data: fund, error: fundError } = await supabase
-    .from("mpf_funds")
-    .select("id")
-    .eq("fund_code", fundCode)
-    .single();
-  if (fundError) console.error("[mpf-tracker] getClosestNav fund lookup:", fundError);
-  if (!fund) return null;
-
-  const { data: price, error: priceError } = await supabase
-    .from("mpf_prices")
-    .select("nav")
-    .eq("fund_id", fund.id)
-    .lte("date", dateStr)
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
-  if (priceError) console.error("[mpf-tracker] getClosestNav price lookup:", priceError);
-
-  return price ? Number(price.nav) : null;
-}
+// Thin wrappers — delegate to shared module, bind product = 'mpf'
+const getExactNav = (fundCode: string, dateStr: string) =>
+  sharedGetExactNav("mpf", fundCode, dateStr);
+const getClosestNav = (fundCode: string, dateStr: string) =>
+  sharedGetClosestNav("mpf", fundCode, dateStr);
 
 export async function processSettlements(): Promise<{
   settled: number;
+  executed: number;
   blocked: string[];
 }> {
   const supabase = createAdminClient();
@@ -548,23 +497,79 @@ export async function processSettlements(): Promise<{
   if (dueError) throw new Error(`[mpf-tracker] processSettlements dueSwitches query: ${dueError.message}`);
 
   const settled: string[] = [];
+  const executed: string[] = [];
   const blocked: string[] = [];
 
-  // ARCHITECTURAL NOTE: AIA fund price publication has a structural ~5 biz day
-  // lag. This is NORMAL for this data source, not an outage. We must NOT block
-  // settlements on NAV availability — the real-world AIA transaction happens
-  // on the scheduled settlement_date regardless of when prices publish.
-  //
-  // Current code waits for exact NAV before settling (see allNavsAvailable
-  // below). That is the interim behavior — switches sit in "pending" until
-  // prices catch up, then settle using real NAVs. This preserves money accuracy
-  // but means the DB state lags reality by ~5 biz days.
-  //
-  // FUTURE: optimistic settlement — mark settled on scheduled date with
-  // provisional/null NAVs, then a reconciliation cron backfills real NAVs
-  // when they publish. See docs/verify/2026-04-09-stale-price-gate.md.
+  // Optimistic settlement cutoff: rows created on or after this date use the
+  // new pending → executed → settled flow. Legacy rows keep the old
+  // pending → settled (NAV-wait) path.
+  const MIGRATION_CUTOFF = new Date('2026-04-10T00:00:00+08:00');
 
   for (const sw of dueSwitches || []) {
+    // ── NEW-ERA: optimistic execution (no NAV needed) ──────────────
+    if (new Date(sw.created_at) >= MIGRATION_CUTOFF) {
+      // Mark as executed — the real-world AIA transaction happens on the
+      // scheduled settlement_date regardless of when prices publish.
+      // A separate reconciliation cron will backfill real NAVs later.
+      const { data: execUpdated, error: execErr } = await supabase
+        .from("mpf_pending_switches")
+        .update({ status: "executed", executed_at: new Date().toISOString() })
+        .eq("id", sw.id)
+        .eq("status", "pending")  // defense: prevents double-execution on concurrent cron
+        .select("id");
+
+      if (execErr) {
+        console.error(`[mpf-settlement] executed update failed for ${sw.id}:`, execErr.message);
+        blocked.push(`${sw.id}: executed update error: ${execErr.message}`);
+        await sendDiscordAlert(
+          {
+            title: "🔴 MPF Optimistic Execution Failed",
+            description: `Switch ${sw.id} could not transition to executed:\n\`${sanitizeError(execErr.message)}\``,
+            color: COLORS.red,
+          },
+          { urgent: true }
+        );
+        continue;
+      }
+
+      if (!execUpdated || execUpdated.length === 0) {
+        // Another cron invocation already executed this row — skip silently
+        console.log(`[mpf-settlement] ${sw.id} already executed by another invocation, skipping`);
+        continue;
+      }
+
+      // Write audit trail
+      const { error: auditErr } = await supabase
+        .from("state_transitions")
+        .insert({
+          table_name: "mpf_pending_switches",
+          row_id: sw.id,
+          from_status: "pending",
+          to_status: "executed",
+          actor: "cron:mpf-portfolio-nav",
+          payload: { settlement_date: sw.settlement_date, trigger: "optimistic" },
+        });
+      if (auditErr) console.error(`[mpf-settlement] state_transitions insert failed for ${sw.id}:`, auditErr.message);
+
+      executed.push(sw.id);
+      console.log(`[mpf-settlement] ${sw.id} → executed (optimistic, settlement_date=${sw.settlement_date})`);
+
+      await sendDiscordAlert({
+        title: "⚡ MPF Switch Executed (Optimistic)",
+        description: [
+          `Switch \`${sw.id}\` moved to **executed**.`,
+          `**Settlement date:** ${sw.settlement_date}`,
+          `NAV reconciliation pending — will settle when prices publish.`,
+        ].join("\n"),
+        color: COLORS.green,
+      });
+
+      continue; // skip legacy NAV-wait logic
+    }
+
+    // ── LEGACY: NAV-wait settlement (pending → settled) ────────────
+    // Rows created before the migration cutoff keep the old behavior:
+    // wait for exact NAVs, then settle atomically via settle_switch RPC.
     const newAlloc = sw.new_allocation as FundAllocation[];
 
     // Check ALL buy NAVs are available (exact date required for settlement)
@@ -655,11 +660,11 @@ export async function processSettlements(): Promise<{
         cursor = next.toISOString().split("T")[0];
         if (isWorkingDay(cursor, blockedHolidays)) bizDaysOverdue++;
       }
-      if (bizDaysOverdue >= 1) {
+      if (bizDaysOverdue >= 10) {
         await sendDiscordAlert(
           {
-            title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz day" + (bizDaysOverdue === 1 ? "" : "s") + ")",
-            description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business day${bizDaysOverdue === 1 ? "" : "s"} overdue — check AIA price source.`,
+            title: "🔴 Settlement Stuck — Missing NAV (" + bizDaysOverdue + " biz days)",
+            description: `Switch ${sw.id} cannot settle: missing price for ${sw.settlement_date}. ${bizDaysOverdue} business days overdue — check AIA price source.`,
             color: COLORS.red,
           },
           { urgent: true }
@@ -821,7 +826,7 @@ export async function processSettlements(): Promise<{
     });
   }
 
-  return { settled: settled.length, blocked };
+  return { settled: settled.length, executed: executed.length, blocked };
 }
 
 // ===== 7. Daily NAV Computation =====
