@@ -417,11 +417,22 @@ CREATE TRIGGER enforce_ilas_status_transition
 
 - Every state transition logs to `state_transitions` audit table: `{row_id, from_status, to_status, actor, at}`
 - Reconcile cron logs summary: `{checked_count, reconciled_count, oldest_executed_bd, errors}`
-- Urgent Discord alerts on:
-  - Any DB trigger exception (code bug)
-  - Any row `executed` > 10 biz days unreconciled (catastrophic)
-  - Any reconcile cron error
-- Info alerts on first successful reconciliation each day + signal promoter summary
+
+**Three-tier alert thresholds (by biz days in `executed` state, measured from `executed_at`):**
+
+| Tier | Threshold | Severity | Channel | Action |
+|---|---|---|---|---|
+| Normal | 0–6 bd | None | — | Expected AIA publication lag, no alert |
+| Warning | 7 bd | Info | `#aia-info` Discord | Earlier-than-usual escalation — something may be off upstream, monitor closely |
+| Urgent | 10 bd | Urgent | `#aia-urgent` Discord + email on-call | Catastrophic — gate returns `reconciliation_overdue` BlockReason, human must intervene |
+
+**Additional urgent alerts:**
+- Any DB trigger exception (code bug — must fix immediately)
+- Any reconcile cron error or unexpected exception
+
+**Info alerts:**
+- First successful reconciliation each day (cron is alive)
+- Signal promoter batch summary (count of promoted/rejected per run)
 
 ### Money-path guarantees
 
@@ -644,7 +655,7 @@ COMMIT;
 ### Regression protection
 
 - 4 integration tests added to pre-ship gate
-- Supabase scheduled query alerting on `executed > 7 bd`
+- Supabase scheduled query alerting on `executed > 7 bd` (tier-1 warning, info channel — see three-tier thresholds above)
 - `/api/cron/reconcile-prices` added to `verify-aia --quick`
 
 ## Out of Scope
