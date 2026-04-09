@@ -4,6 +4,10 @@
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  getExactNav as sharedGetExactNav,
+  getClosestNav as sharedGetClosestNav,
+} from "@/lib/portfolio/nav-lookup";
 import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 import {
   loadHKHolidays,
@@ -74,57 +78,11 @@ export function isSameAllocation(
 
 // ===== NAV Helpers =====
 
-/** Find exact-date NAV. Returns null if no exact match (does NOT fall back). */
-async function getExactNav(
-  fundCode: string,
-  dateStr: string
-): Promise<number | null> {
-  const supabase = createAdminClient();
-  const { data: fund, error: fundError } = await supabase
-    .from("ilas_funds")
-    .select("id")
-    .eq("fund_code", fundCode)
-    .single();
-  if (fundError) console.error("[ilas-tracker] getExactNav fund lookup:", fundError);
-  if (!fund) return null;
-
-  const { data: price, error: priceError } = await supabase
-    .from("ilas_prices")
-    .select("nav")
-    .eq("fund_id", fund.id)
-    .eq("date", dateStr)
-    .single();
-  if (priceError) console.error("[ilas-tracker] getExactNav price lookup:", priceError);
-
-  return price ? Number(price.nav) : null;
-}
-
-/** Find closest NAV on or before date (for daily NAV computation, not settlement) */
-async function getClosestNav(
-  fundCode: string,
-  dateStr: string
-): Promise<number | null> {
-  const supabase = createAdminClient();
-  const { data: fund, error: fundError } = await supabase
-    .from("ilas_funds")
-    .select("id")
-    .eq("fund_code", fundCode)
-    .single();
-  if (fundError) console.error("[ilas-tracker] getClosestNav fund lookup:", fundError);
-  if (!fund) return null;
-
-  const { data: price, error: priceError } = await supabase
-    .from("ilas_prices")
-    .select("nav")
-    .eq("fund_id", fund.id)
-    .lte("date", dateStr)
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
-  if (priceError) console.error("[ilas-tracker] getClosestNav price lookup:", priceError);
-
-  return price ? Number(price.nav) : null;
-}
+// Thin wrappers — delegate to shared module, bind product = 'ilas'
+const getExactNav = (fundCode: string, dateStr: string) =>
+  sharedGetExactNav("ilas", fundCode, dateStr);
+const getClosestNav = (fundCode: string, dateStr: string) =>
+  sharedGetClosestNav("ilas", fundCode, dateStr);
 
 // ===== 1. Switch Gate =====
 

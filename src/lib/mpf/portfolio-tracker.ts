@@ -3,6 +3,10 @@
 // Unit-based NAV tracking — no scale factors, no rounding drift
 
 import { isWorkingDay, addWorkingDays } from "@/lib/portfolio/business-days";
+import {
+  getExactNav as sharedGetExactNav,
+  getClosestNav as sharedGetClosestNav,
+} from "@/lib/portfolio/nav-lookup";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendDiscordAlert, COLORS, sanitizeError } from "@/lib/discord";
 import {
@@ -467,57 +471,11 @@ export async function expireStaleRequests(): Promise<number> {
 
 // ===== 6. Settlement Processing =====
 
-/** Find exact-date NAV. Returns null if no exact match (does NOT fall back). */
-async function getExactNav(
-  fundCode: string,
-  dateStr: string
-): Promise<number | null> {
-  const supabase = createAdminClient();
-  const { data: fund, error: fundError } = await supabase
-    .from("mpf_funds")
-    .select("id")
-    .eq("fund_code", fundCode)
-    .single();
-  if (fundError) console.error("[mpf-tracker] getExactNav fund lookup:", fundError);
-  if (!fund) return null;
-
-  const { data: price, error: priceError } = await supabase
-    .from("mpf_prices")
-    .select("nav")
-    .eq("fund_id", fund.id)
-    .eq("date", dateStr)
-    .single();
-  if (priceError) console.error("[mpf-tracker] getExactNav price lookup:", priceError);
-
-  return price ? Number(price.nav) : null;
-}
-
-/** Find closest NAV on or before date (for daily NAV computation, not settlement) */
-async function getClosestNav(
-  fundCode: string,
-  dateStr: string
-): Promise<number | null> {
-  const supabase = createAdminClient();
-  const { data: fund, error: fundError } = await supabase
-    .from("mpf_funds")
-    .select("id")
-    .eq("fund_code", fundCode)
-    .single();
-  if (fundError) console.error("[mpf-tracker] getClosestNav fund lookup:", fundError);
-  if (!fund) return null;
-
-  const { data: price, error: priceError } = await supabase
-    .from("mpf_prices")
-    .select("nav")
-    .eq("fund_id", fund.id)
-    .lte("date", dateStr)
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
-  if (priceError) console.error("[mpf-tracker] getClosestNav price lookup:", priceError);
-
-  return price ? Number(price.nav) : null;
-}
+// Thin wrappers — delegate to shared module, bind product = 'mpf'
+const getExactNav = (fundCode: string, dateStr: string) =>
+  sharedGetExactNav("mpf", fundCode, dateStr);
+const getClosestNav = (fundCode: string, dateStr: string) =>
+  sharedGetClosestNav("mpf", fundCode, dateStr);
 
 export async function processSettlements(): Promise<{
   settled: number;
