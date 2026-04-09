@@ -48,9 +48,10 @@ export async function GET(req: Request) {
           const dow = cursor.getDay();
           if (dow !== 0 && dow !== 6) bizDaysStale++;
         }
-        // Day 0-1: still normal T+1 lag, stay quiet (info only)
-        // Day 2+: upstream problem, escalate to urgent
-        const isUrgent = bizDaysStale >= 2;
+        // AIA CorpWS has a structural ~5 biz day publication lag. That is
+        // normal, not an outage. Stay quiet for days 0-5; only escalate to
+        // urgent at 6+ which indicates a genuine catastrophic outage.
+        const isUrgent = bizDaysStale >= 6;
         await sendDiscordAlert(
           {
             title: isUrgent

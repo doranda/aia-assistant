@@ -513,55 +513,19 @@ export async function processIlasSettlements(
   const settled: string[] = [];
   const blocked: string[] = [];
 
-  // TOP-LEVEL STALENESS GATE — refuse to process ANY settlements if upstream
-  // price feed hasn't updated in too long. Prevents real-money switches from
-  // executing at stale NAVs when AIA CorpWS is not publishing. One clear alert
-  // beats N per-order "missing NAV" alerts.
-  if ((dueOrders || []).length > 0) {
-    const { data: latestPriceRow, error: latestPriceErr } = await supabase
-      .from("ilas_prices")
-      .select("date")
-      .order("date", { ascending: false })
-      .limit(1)
-      .single();
-    if (latestPriceErr) console.error("[ilas-tracker] staleness gate latest price query:", latestPriceErr);
-    const latestPriceDate = latestPriceRow?.date ?? null;
-    // FAIL-CLOSED: if the price table is empty or the latest row is dated in
-    // the future (corrupt backfill, clock skew, bad data), REFUSE to settle.
-    // A gate that silently passes on null/corrupt state is worse than no gate.
-    if (!latestPriceDate || latestPriceDate > today) {
-      await sendDiscordAlert(
-        {
-          title: `🛑 ILAS ${portfolioType} Settlements PAUSED — Corrupt Price State`,
-          description: `**${(dueOrders || []).length} pending order(s) due today are NOT being settled** because the ilas_prices table is in an unusable state.\n\n• Latest price in DB: **${latestPriceDate ?? "NULL (empty table)"}**\n• Today: ${today}\n• Reason: ${!latestPriceDate ? "price table is empty" : "latest row is future-dated (corrupt)"}\n• Pending IDs: ${(dueOrders || []).map((o) => o.id.slice(0, 8)).join(", ")}\n\n**This is a fail-closed guard.** Investigate the price table before manually re-running the settlement cron.`,
-          color: COLORS.red,
-        },
-        { urgent: true }
-      );
-      return { settled: 0, blocked: (dueOrders || []).map((o) => `${o.id}: paused — corrupt price state`) };
-    }
-    const gateHolidays = await loadHKHolidays();
-    let bizDaysStale = 0;
-    let cursor = latestPriceDate;
-    while (cursor < today) {
-      const next = new Date(cursor + "T00:00:00Z");
-      next.setUTCDate(next.getUTCDate() + 1);
-      cursor = next.toISOString().split("T")[0];
-      if (isWorkingDay(cursor, gateHolidays)) bizDaysStale++;
-    }
-    // ILAS is T+1 normal — pause settlements when feed is 2+ biz days stale
-    if (bizDaysStale >= 2) {
-      await sendDiscordAlert(
-        {
-          title: `🛑 ILAS ${portfolioType} Settlements PAUSED — Upstream Stale (${bizDaysStale} biz days)`,
-          description: `**${(dueOrders || []).length} pending order(s) due today are NOT being settled** because the AIA CorpWS feed has not updated in ${bizDaysStale} business days.\n\n• Latest price in DB: **${latestPriceDate}**\n• Today: ${today}\n• Pending IDs: ${(dueOrders || []).map((o) => o.id.slice(0, 8)).join(", ")}\n\nExecuting with stale NAVs risks real-money slippage. **Contact AIA IT to resume CorpWS publication.** Once prices catch up, the next portfolio-nav cron will pick these up automatically.`,
-          color: COLORS.red,
-        },
-        { urgent: true }
-      );
-      return { settled: 0, blocked: (dueOrders || []).map((o) => `${o.id}: paused — upstream stale ${bizDaysStale}d`) };
-    }
-  }
+  // ARCHITECTURAL NOTE: AIA CorpWS price publication has a structural ~5 biz
+  // day lag. This is NORMAL for this data source, not an outage. We must NOT
+  // block settlements on NAV availability — the real-world AIA transaction
+  // happens on the scheduled settlement_date regardless of when prices publish.
+  //
+  // Current code waits for exact NAV before settling (see allNavsAvailable
+  // below). That is the interim behavior — orders sit in "pending" until
+  // prices catch up, then settle using real NAVs. This preserves money accuracy
+  // but means the DB state lags reality by ~5 biz days.
+  //
+  // FUTURE: optimistic settlement — mark executed on scheduled date with
+  // provisional/null NAVs, then a reconciliation cron backfills real NAVs
+  // when they publish. See docs/verify/2026-04-09-stale-price-gate.md.
 
   for (const order of dueOrders || []) {
     const newAlloc = order.new_allocation as FundAllocation[];

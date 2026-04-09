@@ -71,8 +71,10 @@ export async function GET(req: NextRequest) {
           const dow = cursor.getDay();
           if (dow !== 0 && dow !== 6) bizDaysStale++;
         }
-        // MPF is T+2 normal, so escalate at day 3+ (one day buffer over ILAS)
-        const isUrgent = bizDaysStale >= 3;
+        // AIA MPF API has a structural ~5 biz day publication lag. That is
+        // normal, not an outage. Stay quiet for days 0-5; only escalate to
+        // urgent at 6+ which indicates a genuine catastrophic outage.
+        const isUrgent = bizDaysStale >= 6;
         await sendDiscordAlert(
           {
             title: isUrgent
