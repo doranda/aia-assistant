@@ -26,11 +26,16 @@ export async function runReconciliationAlerts(): Promise<{
     "mpf_pending_switches",
     "ilas_portfolio_orders",
   ] as const) {
-    const { data: rows } = await supabase
+    const { data: rows, error: queryErr } = await supabase
       .from(table)
       .select("id, executed_at")
       .eq("status", "executed")
       .is("reconciled_at", null);
+
+    if (queryErr) {
+      console.error(`[reconciliation-alerts] Failed to query ${table}:`, queryErr.message);
+      continue;
+    }
 
     for (const row of rows || []) {
       if (!row.executed_at) continue;

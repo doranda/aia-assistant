@@ -102,6 +102,11 @@ export async function promoteSignals(
         `[signal-promoter] Promote update failed for ${userId}/${productType}:`,
         promoteErr,
       );
+      // Promote failed — move these IDs to rejected so the returned count is accurate
+      for (const id of toPromote) {
+        toReject.push({ id, reason: "promote_update_failed" });
+      }
+      toPromote.length = 0;
     }
   }
 

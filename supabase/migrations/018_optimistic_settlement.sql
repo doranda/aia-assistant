@@ -66,7 +66,7 @@ BEGIN
 
   IF NOT (
     -- Standard 3-tier state machine
-    (OLD.status = 'awaiting_approval' AND NEW.status IN ('pending', 'expired'))           OR
+    (OLD.status = 'awaiting_approval' AND NEW.status IN ('pending', 'expired', 'cancelled')) OR
     (OLD.status = 'pending'           AND NEW.status IN ('executed', 'cancelled'))        OR
     (OLD.status = 'executed'          AND NEW.status IN ('settled', 'cancelled'))         OR
     -- LEGACY escape hatch: rows created before 2026-04-10 HKT (i.e. before the optimistic
@@ -189,13 +189,21 @@ CREATE INDEX IF NOT EXISTS idx_state_transitions_row
 -- ===========================================================================
 
 ALTER TABLE agent_signals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_full_access_agent_signals" ON agent_signals;
 CREATE POLICY "service_role_full_access_agent_signals"
   ON agent_signals FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
+GRANT ALL ON agent_signals TO authenticated, service_role;
+GRANT SELECT ON agent_signals TO anon;
+
 ALTER TABLE state_transitions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_role_full_access_state_transitions" ON state_transitions;
 CREATE POLICY "service_role_full_access_state_transitions"
   ON state_transitions FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
+GRANT ALL ON state_transitions TO authenticated, service_role;
+GRANT SELECT ON state_transitions TO anon;

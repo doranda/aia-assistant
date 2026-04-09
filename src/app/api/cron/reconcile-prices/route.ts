@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getExactNav, type Product } from "@/lib/portfolio/nav-lookup";
+import { getExactNav, getClosestNav, type Product } from "@/lib/portfolio/nav-lookup";
 import { reconcileSwitch } from "@/lib/portfolio/reconcile";
 import { loadHKHolidays } from "@/lib/portfolio/business-days";
 import type { ProductType } from "@/lib/portfolio/state-gate";
@@ -207,28 +207,63 @@ async function reconcileRow(
   }
 
   // Step 2: Compute sell total
-  // If sell_nav_total was pre-computed during execution, use it.
-  // Otherwise compute from sell NAVs (assume equal-weight units from old allocation).
-  // NOTE: The existing portfolio-tracker stores sell_nav_total when settling.
-  // For executed rows that haven't been settled yet, we need to compute it.
+  // Legacy rows have sell_nav_total pre-computed by the old settlement path.
+  // New-era optimistic rows do NOT — we must compute from portfolio holdings.
   let sellTotal = 0;
 
-  // We don't have per-fund units stored on the switch row. The portfolio tracker
-  // fetches them from mpf_portfolio_nav.holdings. For reconciliation, we compute
-  // sell proceeds per fund using the reconcileSwitch math for each sell→buy pair.
-  // However, the simple approach: compute cash balance from sell side, then
-  // distribute to buy side by weight.
-
-  // Use sell_nav_total if already computed
-  if (row.sell_nav_total && row.sell_nav_total > 0) {
+  if (row.sell_nav_total != null && row.sell_nav_total > 0) {
+    // Legacy path: pre-computed sell total available
     sellTotal = row.sell_nav_total;
   } else {
-    // Cannot reconcile without knowing the sell total — skip for now.
-    // The execute step should have stored sell_nav_total.
-    console.warn(
-      `[reconcile-prices] Row ${row.id} has no sell_nav_total, skipping`,
-    );
-    return null;
+    // New-era path: compute sell total from portfolio NAV holdings × sell NAVs.
+    // This mirrors the legacy processSettlements logic that reads from
+    // mpf_portfolio_nav.holdings (or ilas_portfolio_nav.holdings).
+    const navTable = product === "mpf" ? "mpf_portfolio_nav" : "ilas_portfolio_nav";
+    const { data: navRow } = await supabase
+      .from(navTable)
+      .select("nav, holdings, is_cash")
+      .eq("date", row.sell_date)
+      .limit(1)
+      .maybeSingle();
+
+    if (!navRow) {
+      // Try fallback: most recent row before sell date
+      const { data: fallback } = await supabase
+        .from(navTable)
+        .select("nav, holdings, is_cash")
+        .lte("date", row.sell_date)
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!fallback) {
+        console.warn(`[reconcile-prices] Row ${row.id}: no portfolio NAV data for sell_date ${row.sell_date}, skipping`);
+        return null;
+      }
+
+      if (fallback.is_cash || !fallback.holdings || (fallback.holdings as any[]).length === 0) {
+        sellTotal = Number(fallback.nav) || 0;
+      } else {
+        for (const h of fallback.holdings as Array<{ code: string; units: number }>) {
+          const nav = await getExactNav(product, h.code, row.sell_date);
+          const fallbackNav = nav ?? await getClosestNav(product, h.code, row.sell_date);
+          sellTotal += h.units * (fallbackNav || 0);
+        }
+      }
+    } else if (navRow.is_cash || !navRow.holdings || (navRow.holdings as any[]).length === 0) {
+      sellTotal = Number(navRow.nav) || 0;
+    } else {
+      for (const h of navRow.holdings as Array<{ code: string; units: number }>) {
+        const nav = await getExactNav(product, h.code, row.sell_date);
+        const fallbackNav = nav ?? await getClosestNav(product, h.code, row.sell_date);
+        sellTotal += h.units * (fallbackNav || 0);
+      }
+    }
+
+    if (sellTotal <= 0) {
+      console.warn(`[reconcile-prices] Row ${row.id}: computed sell_nav_total is ${sellTotal}, skipping`);
+      return null;
+    }
   }
 
   // Step 3: Run reconcileSwitch for each sell→buy pair
@@ -263,22 +298,31 @@ async function reconcileRow(
     totalCashDragDays = result.cashDragDays; // same for all legs
   }
 
-  // Step 4: Update row → settled
+  // Step 4: Update row → settled (with optimistic lock on status)
   const now = new Date().toISOString();
-  const { error: updateErr } = await supabase
+  const { data: updated, error: updateErr } = await supabase
     .from(table)
     .update({
       status: "settled",
       settled_at: now,
       reconciled_at: now,
+      sell_nav_total: sellTotal,
       buy_nav_total: totalBuyNavTotal,
     })
-    .eq("id", row.id);
+    .eq("id", row.id)
+    .eq("status", "executed")  // defense: prevents double-settle on concurrent cron
+    .select("id");
 
   if (updateErr) {
     throw new Error(
       `Failed to settle row ${row.id}: ${updateErr.message}`,
     );
+  }
+
+  if (!updated || updated.length === 0) {
+    // Another invocation already settled this row — skip audit + return
+    console.log(`[reconcile-prices] Row ${row.id} already settled by another invocation, skipping`);
+    return null;
   }
 
   // Step 5: Write state_transitions audit row

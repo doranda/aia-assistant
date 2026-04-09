@@ -487,7 +487,8 @@ export async function processIlasSettlements(
       const { error: execErr } = await supabase
         .from("ilas_portfolio_orders")
         .update({ status: "executed", executed_at: new Date().toISOString() })
-        .eq("id", order.id);
+        .eq("id", order.id)
+        .eq("status", "pending");  // defense: prevents double-execution on concurrent cron
 
       if (execErr) {
         console.error(`[ilas-settlement] executed update failed for ${order.id}:`, execErr.message);

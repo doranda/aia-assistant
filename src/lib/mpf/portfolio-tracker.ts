@@ -511,7 +511,8 @@ export async function processSettlements(): Promise<{
       const { error: execErr } = await supabase
         .from("mpf_pending_switches")
         .update({ status: "executed", executed_at: new Date().toISOString() })
-        .eq("id", sw.id);
+        .eq("id", sw.id)
+        .eq("status", "pending");  // defense: prevents double-execution on concurrent cron
 
       if (execErr) {
         console.error(`[mpf-settlement] executed update failed for ${sw.id}:`, execErr.message);

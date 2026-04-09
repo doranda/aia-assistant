@@ -84,15 +84,16 @@ function buildExecutedRowsChain(rows: object[]) {
   return { selectMock, eqMock, isMock, orderMock };
 }
 
-// Builds a chain for frequencyCheck: from(table).select(cols).eq(status,settled).order().limit().single()
+// Builds a chain for frequencyCheck: from(table).select(cols).eq(status,settled).order().limit()
+// Implementation now fetches up to 10 rows (not .single()), so limit() resolves the chain.
 function buildFreqChain(row: object | null) {
-  const singleResult = { data: row, error: row ? null : { message: "no rows" } };
-  const singleMock = vi.fn().mockResolvedValue(singleResult);
-  const limitMock = vi.fn().mockReturnValue({ single: singleMock });
+  const rows = row ? [row] : [];
+  const dataResult = { data: rows, error: null };
+  const limitMock = vi.fn().mockResolvedValue(dataResult);
   const orderMock = vi.fn().mockReturnValue({ limit: limitMock });
   const eqMock = vi.fn().mockReturnValue({ order: orderMock });
   const selectMock = vi.fn().mockReturnValue({ eq: eqMock });
-  return { selectMock, eqMock, orderMock, limitMock, singleMock };
+  return { selectMock, eqMock, orderMock, limitMock };
 }
 
 // ============================================================

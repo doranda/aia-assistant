@@ -309,30 +309,34 @@ export class PortfolioStateGateImpl implements PortfolioStateGate {
   ): Promise<string | null> {
     const db = createAdminClient();
 
+    // Fetch recent settled rows (up to 10) and scan for the target fund.
+    // Cannot filter JSONB arrays server-side via PostgREST, so we fetch a
+    // small window and check in-process.
     const { data, error } = await db
       .from("mpf_pending_switches")
       .select("settled_at, old_allocation, new_allocation")
       .eq("status", "settled")
       .order("settled_at", { ascending: false })
-      .limit(1)
-      .single();
+      .limit(10);
 
     if (error || !data) return null;
 
-    const row = data as {
+    for (const row of data as Array<{
       settled_at: string | null;
       old_allocation: Array<{ code: string; weight: number }>;
       new_allocation: Array<{ code: string; weight: number }>;
-    };
+    }>) {
+      const allFunds = [
+        ...(row.old_allocation ?? []),
+        ...(row.new_allocation ?? []),
+      ].map((a) => a.code);
 
-    const allFunds = [
-      ...(row.old_allocation ?? []),
-      ...(row.new_allocation ?? []),
-    ].map((a) => a.code);
+      if (allFunds.includes(fundCode) && row.settled_at) {
+        return row.settled_at.split("T")[0];
+      }
+    }
 
-    if (!allFunds.includes(fundCode)) return null;
-
-    return row.settled_at ? row.settled_at.split("T")[0] : null;
+    return null;
   }
 
   /**
@@ -350,25 +354,26 @@ export class PortfolioStateGateImpl implements PortfolioStateGate {
       .select("reconciled_at, old_allocation, new_allocation")
       .eq("status", "settled")
       .order("reconciled_at", { ascending: false })
-      .limit(1)
-      .single();
+      .limit(10);
 
     if (error || !data) return null;
 
-    const row = data as {
+    for (const row of data as Array<{
       reconciled_at: string | null;
       old_allocation: Array<{ code: string; weight: number }>;
       new_allocation: Array<{ code: string; weight: number }>;
-    };
+    }>) {
+      const allFunds = [
+        ...(row.old_allocation ?? []),
+        ...(row.new_allocation ?? []),
+      ].map((a) => a.code);
 
-    const allFunds = [
-      ...(row.old_allocation ?? []),
-      ...(row.new_allocation ?? []),
-    ].map((a) => a.code);
+      if (allFunds.includes(fundCode) && row.reconciled_at) {
+        return row.reconciled_at.split("T")[0];
+      }
+    }
 
-    if (!allFunds.includes(fundCode)) return null;
-
-    return row.reconciled_at ? row.reconciled_at.split("T")[0] : null;
+    return null;
   }
 }
 
