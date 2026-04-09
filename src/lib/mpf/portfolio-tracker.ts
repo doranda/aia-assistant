@@ -100,15 +100,18 @@ export async function canSubmitSwitch(): Promise<SwitchGateResult> {
   const { data: active, error: activeError } = await supabase
     .from("mpf_pending_switches")
     .select("*")
-    .in("status", ["pending", "awaiting_approval"])
+    .in("status", ["pending", "awaiting_approval", "executed"])
     .limit(1)
     .single();
   if (activeError) console.error("[mpf-tracker] canSubmitSwitch active switch query:", activeError);
 
   if (active) {
+    const statusMsg = active.status === "executed"
+      ? "executed, awaiting NAV reconciliation (~4-6 biz days)"
+      : active.status === "pending" ? `settles ${active.settlement_date}` : `awaiting approval, expires ${active.expires_at}`;
     return {
       allowed: false,
-      reason: `Switch ${active.status}: ${active.status === "pending" ? `settles ${active.settlement_date}` : `awaiting approval, expires ${active.expires_at}`}`,
+      reason: `Switch ${active.status}: ${statusMsg}`,
       pendingSwitch: active as PendingSwitch,
     };
   }
@@ -508,11 +511,12 @@ export async function processSettlements(): Promise<{
       // Mark as executed — the real-world AIA transaction happens on the
       // scheduled settlement_date regardless of when prices publish.
       // A separate reconciliation cron will backfill real NAVs later.
-      const { error: execErr } = await supabase
+      const { data: execUpdated, error: execErr } = await supabase
         .from("mpf_pending_switches")
         .update({ status: "executed", executed_at: new Date().toISOString() })
         .eq("id", sw.id)
-        .eq("status", "pending");  // defense: prevents double-execution on concurrent cron
+        .eq("status", "pending")  // defense: prevents double-execution on concurrent cron
+        .select("id");
 
       if (execErr) {
         console.error(`[mpf-settlement] executed update failed for ${sw.id}:`, execErr.message);
@@ -525,6 +529,12 @@ export async function processSettlements(): Promise<{
           },
           { urgent: true }
         );
+        continue;
+      }
+
+      if (!execUpdated || execUpdated.length === 0) {
+        // Another cron invocation already executed this row — skip silently
+        console.log(`[mpf-settlement] ${sw.id} already executed by another invocation, skipping`);
         continue;
       }
 

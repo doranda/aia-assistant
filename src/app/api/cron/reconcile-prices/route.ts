@@ -219,19 +219,26 @@ async function reconcileRow(
     // This mirrors the legacy processSettlements logic that reads from
     // mpf_portfolio_nav.holdings (or ilas_portfolio_nav.holdings).
     const navTable = product === "mpf" ? "mpf_portfolio_nav" : "ilas_portfolio_nav";
-    const { data: navRow } = await supabase
+    // ILAS NAV table is keyed by (date, portfolio_type) — must scope to avoid wrong sleeve
+    let navQuery = supabase
       .from(navTable)
       .select("nav, holdings, is_cash")
-      .eq("date", row.sell_date)
-      .limit(1)
-      .maybeSingle();
+      .eq("date", row.sell_date);
+    if (product === "ilas" && row.portfolio_type) {
+      navQuery = navQuery.eq("portfolio_type", row.portfolio_type);
+    }
+    const { data: navRow } = await navQuery.limit(1).maybeSingle();
 
     if (!navRow) {
       // Try fallback: most recent row before sell date
-      const { data: fallback } = await supabase
+      let fallbackQuery = supabase
         .from(navTable)
         .select("nav, holdings, is_cash")
-        .lte("date", row.sell_date)
+        .lte("date", row.sell_date);
+      if (product === "ilas" && row.portfolio_type) {
+        fallbackQuery = fallbackQuery.eq("portfolio_type", row.portfolio_type);
+      }
+      const { data: fallback } = await fallbackQuery
         .order("date", { ascending: false })
         .limit(1)
         .maybeSingle();

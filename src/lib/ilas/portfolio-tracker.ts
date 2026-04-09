@@ -96,15 +96,18 @@ export async function canSubmitIlasSwitch(
     .from("ilas_portfolio_orders")
     .select("*")
     .eq("portfolio_type", portfolioType)
-    .in("status", ["pending", "awaiting_approval"])
+    .in("status", ["pending", "awaiting_approval", "executed"])
     .limit(1)
     .single();
   if (activeError) console.error("[ilas-tracker] canSubmitIlasSwitch active orders query:", activeError);
 
   if (active) {
+    const statusMsg = active.status === "executed"
+      ? "executed, awaiting NAV reconciliation (~4-6 biz days)"
+      : active.status === "pending" ? `settles ${active.settlement_date}` : `awaiting approval, expires ${active.expires_at}`;
     return {
       allowed: false,
-      reason: `Switch ${active.status}: ${active.status === "pending" ? `settles ${active.settlement_date}` : `awaiting approval, expires ${active.expires_at}`}`,
+      reason: `Switch ${active.status}: ${statusMsg}`,
       pendingOrder: active as PendingOrder,
     };
   }
@@ -484,11 +487,12 @@ export async function processIlasSettlements(
       // Mark as executed — the real-world AIA transaction happens on the
       // scheduled settlement_date regardless of when prices publish.
       // A separate reconciliation cron will backfill real NAVs later.
-      const { error: execErr } = await supabase
+      const { data: execUpdated, error: execErr } = await supabase
         .from("ilas_portfolio_orders")
         .update({ status: "executed", executed_at: new Date().toISOString() })
         .eq("id", order.id)
-        .eq("status", "pending");  // defense: prevents double-execution on concurrent cron
+        .eq("status", "pending")  // defense: prevents double-execution on concurrent cron
+        .select("id");
 
       if (execErr) {
         console.error(`[ilas-settlement] executed update failed for ${order.id}:`, execErr.message);
@@ -501,6 +505,11 @@ export async function processIlasSettlements(
           },
           { urgent: true }
         );
+        continue;
+      }
+
+      if (!execUpdated || execUpdated.length === 0) {
+        console.log(`[ilas-settlement] ${order.id} already executed by another invocation, skipping`);
         continue;
       }
 
