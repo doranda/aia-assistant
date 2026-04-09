@@ -550,6 +550,56 @@ export async function processSettlements(): Promise<{
   const settled: string[] = [];
   const blocked: string[] = [];
 
+  // TOP-LEVEL STALENESS GATE — refuse to process ANY settlements if upstream
+  // price feed hasn't updated in too long. Prevents real-money switches from
+  // executing at stale NAVs when AIA CorpWS is not publishing. One clear alert
+  // beats N per-switch "missing NAV" alerts.
+  if ((dueSwitches || []).length > 0) {
+    const { data: latestPriceRow, error: latestPriceErr } = await supabase
+      .from("mpf_prices")
+      .select("date")
+      .order("date", { ascending: false })
+      .limit(1)
+      .single();
+    if (latestPriceErr) console.error("[mpf-tracker] staleness gate latest price query:", latestPriceErr);
+    const latestPriceDate = latestPriceRow?.date ?? null;
+    // FAIL-CLOSED: if the price table is empty or the latest row is dated in
+    // the future (corrupt backfill, clock skew, bad data), REFUSE to settle.
+    // A gate that silently passes on null/corrupt state is worse than no gate.
+    if (!latestPriceDate || latestPriceDate > today) {
+      await sendDiscordAlert(
+        {
+          title: "🛑 MPF Settlements PAUSED — Corrupt Price State",
+          description: `**${(dueSwitches || []).length} pending switch(es) due today are NOT being settled** because the mpf_prices table is in an unusable state.\n\n• Latest price in DB: **${latestPriceDate ?? "NULL (empty table)"}**\n• Today: ${today}\n• Reason: ${!latestPriceDate ? "price table is empty" : "latest row is future-dated (corrupt)"}\n• Pending IDs: ${(dueSwitches || []).map((s) => s.id.slice(0, 8)).join(", ")}\n\n**This is a fail-closed guard.** Investigate the price table before manually re-running the settlement cron.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+      return { settled: 0, blocked: (dueSwitches || []).map((s) => `${s.id}: paused — corrupt price state`) };
+    }
+    const gateHolidays = await loadHKHolidays();
+    let bizDaysStale = 0;
+    let cursor = latestPriceDate;
+    while (cursor < today) {
+      const next = new Date(cursor + "T00:00:00Z");
+      next.setUTCDate(next.getUTCDate() + 1);
+      cursor = next.toISOString().split("T")[0];
+      if (isWorkingDay(cursor, gateHolidays)) bizDaysStale++;
+    }
+    // MPF is T+2 normal — pause settlements when feed is 3+ biz days stale
+    if (bizDaysStale >= 3) {
+      await sendDiscordAlert(
+        {
+          title: `🛑 MPF Settlements PAUSED — Upstream Stale (${bizDaysStale} biz days)`,
+          description: `**${(dueSwitches || []).length} pending switch(es) due today are NOT being settled** because the AIA price feed has not updated in ${bizDaysStale} business days.\n\n• Latest price in DB: **${latestPriceDate}**\n• Today: ${today}\n• Pending IDs: ${(dueSwitches || []).map((s) => s.id.slice(0, 8)).join(", ")}\n\nExecuting with stale NAVs risks real-money slippage. **Contact AIA IT to resume publication.** Once prices catch up, the next portfolio-nav cron will pick these up automatically.`,
+          color: COLORS.red,
+        },
+        { urgent: true }
+      );
+      return { settled: 0, blocked: (dueSwitches || []).map((s) => `${s.id}: paused — upstream stale ${bizDaysStale}d`) };
+    }
+  }
+
   for (const sw of dueSwitches || []) {
     const newAlloc = sw.new_allocation as FundAllocation[];
 

@@ -38,11 +38,31 @@ export async function GET(req: Request) {
       if (latestErr) console.error("[cron/ilas-prices] latest date check:", latestErr);
       const latestInDb = latestRow?.date ?? "";
       if (latestIncoming && latestInDb && latestIncoming <= latestInDb) {
-        await sendDiscordAlert({
-          title: "ℹ️ ILAS Track — No New Price Data",
-          description: `CorpWS API still returning ${latestIncoming} (same as DB). AIA publication lag — ILAS prices typically arrive ~1 business day late.`,
-          color: COLORS.yellow,
-        });
+        // Count business days between latestIncoming and today (HK)
+        const todayHK = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Hong_Kong" }));
+        const latestDt = new Date(latestIncoming + "T00:00:00+08:00");
+        let bizDaysStale = 0;
+        const cursor = new Date(latestDt);
+        while (cursor < todayHK) {
+          cursor.setDate(cursor.getDate() + 1);
+          const dow = cursor.getDay();
+          if (dow !== 0 && dow !== 6) bizDaysStale++;
+        }
+        // Day 0-1: still normal T+1 lag, stay quiet (info only)
+        // Day 2+: upstream problem, escalate to urgent
+        const isUrgent = bizDaysStale >= 2;
+        await sendDiscordAlert(
+          {
+            title: isUrgent
+              ? `🔴 ILAS Track — Upstream Data Stale (${bizDaysStale} biz days)`
+              : "ℹ️ ILAS Track — No New Price Data",
+            description: isUrgent
+              ? `**CorpWS API has not published new prices for ${bizDaysStale} business days.**\n\n• Latest in feed: **${latestIncoming}**\n• Latest in DB: ${latestInDb}\n• Today (HK): ${todayHK.toISOString().slice(0, 10)}\n\nThis is an AIA upstream issue — our cron + scraper are working correctly. **Contact AIA IT to check CorpWS publication status.** Any settlement executed while stale will use ${latestIncoming} NAVs.`
+              : `CorpWS API still returning ${latestIncoming} (same as DB). AIA publication lag — ILAS prices typically arrive ~1 business day late.`,
+            color: isUrgent ? COLORS.red : COLORS.yellow,
+          },
+          isUrgent ? { urgent: true } : undefined
+        );
       }
     }
 

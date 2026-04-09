@@ -32,7 +32,16 @@ export async function updateSession(request: NextRequest) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    const redirectResponse = NextResponse.redirect(loginUrl);
+    // Redirects are NEW response objects — re-apply no-store + security headers
+    // so intermediate proxies don't cache per-user redirects and the redirect
+    // itself can't be framed or sniffed.
+    redirectResponse.headers.set("Cache-Control", "private, no-store, no-cache, must-revalidate");
+    redirectResponse.headers.set("Pragma", "no-cache");
+    redirectResponse.headers.set("X-Frame-Options", "DENY");
+    redirectResponse.headers.set("X-Content-Type-Options", "nosniff");
+    redirectResponse.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    return redirectResponse;
   }
 
   // Prevent caching of authenticated pages — critical for multi-user security
