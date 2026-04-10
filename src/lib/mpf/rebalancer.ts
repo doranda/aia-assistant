@@ -230,11 +230,13 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   const totalActive = activeFunds?.length || 0;
 
-  // Check 1: Price freshness — all funds must have prices within 5 business days
+  // Check 1: Price freshness — block only when data is catastrophically stale
+  // AIA APIs have a structural ~5 biz day lag (normal). Block at 8+ biz days (≈12 calendar days)
+  // to avoid false positives while still catching genuine pipeline failures.
   if (totalActive > 0) {
-    const fiveBusinessDaysAgo = new Date();
-    fiveBusinessDaysAgo.setDate(fiveBusinessDaysAgo.getDate() - 7); // 5 biz days ≈ 7 calendar days
-    const cutoff = fiveBusinessDaysAgo.toISOString().split("T")[0];
+    const staleCutoff = new Date();
+    staleCutoff.setDate(staleCutoff.getDate() - 12); // 8 biz days ≈ 12 calendar days
+    const cutoff = staleCutoff.toISOString().split("T")[0];
 
     const staleFunds: string[] = [];
     for (const f of activeFunds || []) {
@@ -258,7 +260,7 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
       await sendDiscordAlert(
         {
           title: "🚫 MPF Care — Rebalance Blocked (Stale Data)",
-          description: `**${staleFunds.length} funds** have prices older than 5 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or Yahoo Finance backfill to fix.`,
+          description: `**${staleFunds.length} funds** have prices older than 8 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or Yahoo Finance backfill to fix.`,
           color: COLORS.red,
         },
         { urgent: true }

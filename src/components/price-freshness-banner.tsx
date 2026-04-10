@@ -1,6 +1,7 @@
 "use client";
 
-// Shared banner: shows "Prices as of [date]" with a warning if data is stale (>3 business days)
+// Shared banner: shows "Prices as of [date]" with a warning if data is stale (>6 business days)
+// AIA APIs have a structural ~5 biz day lag — warn only at 6+ (catastrophic threshold)
 import { cn } from "@/lib/utils";
 import { Clock, AlertTriangle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n";
@@ -30,7 +31,7 @@ export function PriceFreshnessBanner({ priceDate, label }: PriceFreshnessBannerP
   const now = new Date();
   const today = new Date(now.toISOString().split("T")[0] + "T00:00:00");
   const staleDays = businessDaysBetween(priceD, today);
-  const isStale = staleDays > 3;
+  const isStale = staleDays > 6;
 
   const formattedDate = priceD.toLocaleDateString("en-HK", {
     weekday: "short",

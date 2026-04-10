@@ -218,11 +218,12 @@ export async function evaluateAndRebalanceIlas(
 
   const totalActive = activeFunds?.length || 0;
 
-  // Check 1: Price freshness — all funds must have prices within 5 business days
+  // Check 1: Price freshness — block only when data is catastrophically stale
+  // AIA APIs have a structural ~5 biz day lag (normal). Block at 8+ biz days only.
   if (totalActive > 0) {
-    const fiveBusinessDaysAgo = new Date();
-    fiveBusinessDaysAgo.setDate(fiveBusinessDaysAgo.getDate() - ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS);
-    const cutoff = fiveBusinessDaysAgo.toISOString().split("T")[0];
+    const staleCutoff = new Date();
+    staleCutoff.setDate(staleCutoff.getDate() - ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS);
+    const cutoff = staleCutoff.toISOString().split("T")[0];
 
     const staleFunds: string[] = [];
     for (const f of activeFunds || []) {

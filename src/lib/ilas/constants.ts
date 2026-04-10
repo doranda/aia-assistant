@@ -288,7 +288,7 @@ export const ILAS_INVESTMENT_PROFILE: Record<string, { label: string; descriptio
 export const ILAS_REBALANCER_CONFIG = {
   DAILY_CAP: 3,
   WEEKLY_LIMIT_DAYS: 7,
-  PRICE_FRESHNESS_DAYS: 7,
+  PRICE_FRESHNESS_DAYS: 12, // 8 biz days ≈ 12 calendar days; AIA has structural ~5 biz day lag
   METRICS_COVERAGE_PCT: 0.8,
   DANGER_SORTINO_THRESHOLD: 0,
   DANGER_DRAWDOWN_THRESHOLD: -20,
