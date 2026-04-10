@@ -218,51 +218,12 @@ export async function evaluateAndRebalanceIlas(
 
   const totalActive = activeFunds?.length || 0;
 
-  // Check 1: Price freshness — block only when data is catastrophically stale
-  // AIA APIs have a structural ~5 biz day lag (normal). Block at 8+ biz days only.
-  if (totalActive > 0) {
-    const staleCutoff = new Date();
-    staleCutoff.setDate(staleCutoff.getDate() - ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS);
-    const cutoff = staleCutoff.toISOString().split("T")[0];
+  // Price freshness does NOT gate rebalancing. The rebalancer uses whatever
+  // prices are available. AIA has a structural ~5 biz day lag — that's normal.
+  // Optimistic settlement handles missing NAVs (execute → backfill → settle).
+  // The only block belongs in switch submission (T+2/T+1 rules), not here.
 
-    const staleFunds: string[] = [];
-    for (const f of activeFunds || []) {
-      const { data: latestPrice, error: latestPriceError } = await supabase
-        .from("ilas_prices")
-        .select("date")
-        .eq("fund_id", f.id)
-        .order("date", { ascending: false })
-        .limit(1)
-        .single();
-      if (latestPriceError && latestPriceError.code !== "PGRST116")
-        console.error(`${logPrefix} Failed to fetch latest price for fund:`, f.fund_code, latestPriceError);
-
-      if (!latestPrice || latestPrice.date < cutoff) {
-        staleFunds.push(f.fund_code);
-      }
-    }
-
-    // Allow up to 5% stale funds (tolerance for missing/delisted funds)
-    const stalePct = totalActive > 0 ? (staleFunds.length / totalActive) * 100 : 0;
-    if (stalePct > 5) {
-      const msg = `BLOCKED: stale price data for ${staleFunds.length} funds (${stalePct.toFixed(0)}%): ${staleFunds.slice(0, 10).join(", ")}${staleFunds.length > 10 ? "..." : ""}. Fix data pipeline before rebalancing.`;
-      console.error(`${logPrefix} ${msg}`);
-      await sendDiscordAlert(
-        {
-          title: `🚫 ILAS Track — ${portfolioType} Rebalance Blocked (Stale Data)`,
-          description: `**${staleFunds.length}/${totalActive} funds** (${stalePct.toFixed(0)}%) have prices older than ${ILAS_REBALANCER_CONFIG.PRICE_FRESHNESS_DAYS} days:\n${staleFunds.slice(0, 10).join(", ")}\n\nRun the price cron or data backfill to fix.`,
-          color: COLORS.red,
-        },
-        { urgent: true }
-      );
-      return { rebalanced: false, reason: msg };
-    }
-    if (staleFunds.length > 0) {
-      console.warn(`${logPrefix} ${staleFunds.length} stale funds (within 5% tolerance): ${staleFunds.join(", ")}`);
-    }
-  }
-
-  // Check 2: Metrics coverage — 80% of active funds must have metrics (any period).
+  // Check: Metrics coverage — 80% of active funds must have metrics (any period).
   // ILAS funds have varied launch dates; require 1y OR since_launch so newer
   // funds aren't silently excluded. Matches the downstream fetch below.
   const activeFundCodes = (activeFunds || []).map(f => f.fund_code);

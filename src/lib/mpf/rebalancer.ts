@@ -230,46 +230,12 @@ export async function evaluateAndRebalance(highImpactCount: number): Promise<Reb
 
   const totalActive = activeFunds?.length || 0;
 
-  // Check 1: Price freshness — block only when data is catastrophically stale
-  // AIA APIs have a structural ~5 biz day lag (normal). Block at 8+ biz days (≈12 calendar days)
-  // to avoid false positives while still catching genuine pipeline failures.
-  if (totalActive > 0) {
-    const staleCutoff = new Date();
-    staleCutoff.setDate(staleCutoff.getDate() - 12); // 8 biz days ≈ 12 calendar days
-    const cutoff = staleCutoff.toISOString().split("T")[0];
+  // Price freshness does NOT gate rebalancing. The rebalancer uses whatever
+  // prices are available. AIA has a structural ~5 biz day lag — that's normal.
+  // Optimistic settlement handles missing NAVs (execute → backfill → settle).
+  // The only block belongs in switch submission (T+2/T+1 rules), not here.
 
-    const staleFunds: string[] = [];
-    for (const f of activeFunds || []) {
-      const { data: latestPrice, error: latestPriceError } = await supabase
-        .from("mpf_prices")
-        .select("date")
-        .eq("fund_id", f.id)
-        .order("date", { ascending: false })
-        .limit(1)
-        .single();
-      if (latestPriceError && latestPriceError.code !== "PGRST116") console.error("[debate-rebalancer] Failed to fetch latest price for fund:", f.fund_code, latestPriceError);
-
-      if (!latestPrice || latestPrice.date < cutoff) {
-        staleFunds.push(f.fund_code);
-      }
-    }
-
-    if (staleFunds.length > 0) {
-      const msg = `BLOCKED: stale price data for ${staleFunds.join(", ")}. Fix data pipeline before rebalancing.`;
-      console.error(`[debate-rebalancer] ${msg}`);
-      await sendDiscordAlert(
-        {
-          title: "🚫 MPF Care — Rebalance Blocked (Stale Data)",
-          description: `**${staleFunds.length} funds** have prices older than 8 business days:\n${staleFunds.join(", ")}\n\nRun the price cron or Yahoo Finance backfill to fix.`,
-          color: COLORS.red,
-        },
-        { urgent: true }
-      );
-      return { rebalanced: false, reason: msg };
-    }
-  }
-
-  // Check 2: Metrics coverage — 80% of active funds must have 3Y metrics
+  // Check: Metrics coverage — 80% of active funds must have 3Y metrics
   const activeCodes = (activeFunds || []).map(f => f.fund_code);
   const { data: metricsCount, error: metricsCountError } = await supabase
     .from("mpf_fund_metrics")
