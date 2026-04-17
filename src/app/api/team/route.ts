@@ -84,14 +84,30 @@ export async function POST(request: Request) {
       );
     }
 
-    // Update the profile with the correct role (trigger creates profile with default role)
+    // Explicitly upsert profile — do NOT rely on the handle_new_user trigger
+    // alone, which can fail silently and leave the user invisible to the team
+    // dashboard (observed 2026-04-02 for two members). Upsert is idempotent
+    // whether the trigger ran or not.
     const { error: profileError } = await adminClient
       .from("profiles")
-      .update({ role: newRole, full_name })
-      .eq("id", authData.user.id);
+      .upsert(
+        {
+          id: authData.user.id,
+          email,
+          full_name,
+          role: newRole,
+          is_active: true,
+        },
+        { onConflict: "id" }
+      );
 
     if (profileError) {
-      console.error("Failed to update profile role:", profileError);
+      // Roll back the auth user so we never leave an orphan behind.
+      await adminClient.auth.admin.deleteUser(authData.user.id);
+      return NextResponse.json(
+        { error: `Failed to create profile: ${profileError.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json(

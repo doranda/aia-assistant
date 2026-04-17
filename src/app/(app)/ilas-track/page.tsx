@@ -12,12 +12,14 @@ import { IlasTrackView } from "./ilas-track-view";
 async function getIlasData(isDistribution: boolean) {
   const supabase = createAdminClient();
 
-  // 1. Get funds filtered by share class
+  // 1. Get funds filtered by share class — USD only (non-USD funds are legacy,
+  // not part of current system operation)
   const { data: funds, error: fundsError } = await supabase
     .from("ilas_funds")
     .select("*")
     .eq("is_active", true)
     .eq("is_distribution", isDistribution)
+    .eq("currency", "USD")
     .order("fund_code");
 
   if (fundsError) console.error("[ilas-track] funds query failed:", fundsError.code, fundsError.message);
@@ -61,13 +63,15 @@ async function getIlasData(isDistribution: boolean) {
     .from("ilas_funds")
     .select("*", { count: "exact", head: true })
     .eq("is_active", true)
-    .eq("is_distribution", false);
+    .eq("is_distribution", false)
+    .eq("currency", "USD");
 
   const { count: disCount } = await supabase
     .from("ilas_funds")
     .select("*", { count: "exact", head: true })
     .eq("is_active", true)
-    .eq("is_distribution", true);
+    .eq("is_distribution", true)
+    .eq("currency", "USD");
 
   // 7. Get reference portfolio for the current tab
   const portfolioType = isDistribution ? "distribution" : "accumulation";
@@ -78,6 +82,21 @@ async function getIlasData(isDistribution: boolean) {
 
   if (portfolioError) console.error("[ilas-track] portfolio query failed:", portfolioError.code, portfolioError.message);
 
+  // 7b. Resolve held fund metadata WITHOUT currency filter — legacy non-USD
+  // holdings (e.g. Z28 RMB) must still render in the reference portfolio widget.
+  // The USD filter applies to the discovery/heatmap lists (funds, accCount,
+  // disCount) above, not to held-position lookups.
+  const heldFundIds = (portfolioRows || []).map((r) => r.fund_id);
+  const { data: heldFunds, error: heldError } = heldFundIds.length
+    ? await supabase
+        .from("ilas_funds")
+        .select("id, fund_code, name_en, name_zh, currency")
+        .in("id", heldFundIds)
+    : { data: [] as { id: string; fund_code: string; name_en: string; name_zh: string | null; currency: string }[], error: null };
+
+  if (heldError) console.error("[ilas-track] held funds query failed:", heldError.code, heldError.message);
+  const heldFundMap = new Map((heldFunds || []).map((f) => [f.id, f]));
+
   // 8. Get portfolio NAV history for current tab
   const { data: portfolioNav, error: navError } = await supabase
     .from("ilas_portfolio_nav")
@@ -87,10 +106,11 @@ async function getIlasData(isDistribution: boolean) {
 
   if (navError) console.error("[ilas-track] portfolio nav query failed:", navError.code, navError.message);
 
-  // Build portfolio funds with joined data
+  // Build portfolio funds with joined data — uses heldFundMap (currency-agnostic)
+  // so a legacy RMB/EUR/HKD position renders instead of silently disappearing.
   const portfolioFunds = (portfolioRows || [])
     .map((row) => {
-      const fund = (funds || []).find((f) => f.id === row.fund_id);
+      const fund = heldFundMap.get(row.fund_id);
       if (!fund) return null;
       const price = priceMap.get(fund.id);
       return {

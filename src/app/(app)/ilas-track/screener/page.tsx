@@ -26,11 +26,12 @@ const SCREENER_CATEGORY_KEYS = Object.keys(ILAS_SCREENER_CATEGORIES) as (keyof t
 async function getScreenerData() {
   const supabase = createAdminClient();
 
-  // 1. All active funds
+  // 1. All active USD funds (non-USD funds excluded per system scope)
   const { data: funds, error: fundsError } = await supabase
     .from("ilas_funds")
     .select("*")
     .eq("is_active", true)
+    .eq("currency", "USD")
     .order("fund_code");
 
   if (fundsError) console.error("[ilas-screener] funds query failed:", fundsError.code, fundsError.message);

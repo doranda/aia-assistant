@@ -20,7 +20,7 @@ import type { FundAllocation } from "./types";
 import { callGateway, parseJSON } from "@/lib/mpf/rebalancer";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
-const MODEL = "anthropic/claude-opus-4-6";
+const MODEL = "anthropic/claude-sonnet-4.6";
 
 // ===== Types =====
 
@@ -143,7 +143,8 @@ DECISION FRAMEWORK (in order):
 4. ONLY THEN consider upside: If Sortino > 1.0, drawdown is recovering, and momentum is positive — allocate to equity.
 
 You are a SKEPTIC, not an optimist. Your job is to say "the numbers don't justify equity" when they don't. Propose a ${ILAS_REBALANCER_CONFIG.NUM_FUNDS_IN_PORTFOLIO}-fund portfolio based PURELY on these metrics.`,
-    `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nFUND METRICS (3Y):\n${metricsText}\n\n${sharedConstraints}`
+    `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nFUND METRICS (3Y):\n${metricsText}\n\n${sharedConstraints}`,
+    MODEL
   );
   return parseJSON<IlasPortfolioProposal>(raw);
 }
@@ -209,11 +210,13 @@ export async function evaluateAndRebalanceIlas(
   }
 
   // ===== DATA INTEGRITY GATE — refuse to rebalance with incomplete data =====
+  // USD-only: non-USD funds are legacy and excluded from the candidate pool.
   const { data: activeFunds, error: activeFundsError } = await supabase
     .from("ilas_funds")
     .select("id, fund_code")
     .eq("is_active", true)
-    .eq("is_distribution", portfolioType === "distribution");
+    .eq("is_distribution", portfolioType === "distribution")
+    .eq("currency", "USD");
   if (activeFundsError) console.error(`${logPrefix} Failed to fetch active funds:`, activeFundsError);
 
   const totalActive = activeFunds?.length || 0;
@@ -274,18 +277,23 @@ export async function evaluateAndRebalanceIlas(
 
   if (!portfolio?.length) return { rebalanced: false, reason: `No ${portfolioType} reference portfolio set` };
 
+  // Fetch UNFILTERED: fundMap must resolve every held position, including any
+  // legacy non-USD holdings (e.g. Z28 RMB). Candidate-pool filtering happens
+  // below against `usdFunds` only.
   const { data: funds, error: fundsError } = await supabase
     .from("ilas_funds")
-    .select("id, fund_code, name_en, category, risk_rating")
+    .select("id, fund_code, name_en, category, risk_rating, currency")
     .eq("is_active", true)
     .eq("is_distribution", portfolioType === "distribution");
   if (fundsError) console.error(`${logPrefix} Failed to fetch funds:`, fundsError);
 
   const fundMap = new Map((funds || []).map(f => [f.id, f]));
+  const usdFunds = (funds || []).filter(f => f.currency === "USD");
 
   const currentHoldings = portfolio.map(p => {
     const fund = fundMap.get(p.fund_id);
-    return { code: fund?.fund_code || "", name: fund?.name_en || "", weight: p.weight };
+    const legacyTag = fund && fund.currency !== "USD" ? ` [LEGACY ${fund.currency} — MUST MIGRATE OUT]` : "";
+    return { code: fund?.fund_code || "", name: (fund?.name_en || "") + legacyTag, weight: p.weight };
   });
 
   // Get fund metrics (filtered to this portfolio's fund codes).
@@ -329,10 +337,11 @@ export async function evaluateAndRebalanceIlas(
   ).join("\n");
 
   const currentPortfolioText = currentHoldings.map(h => `${h.code} (${h.name}): ${h.weight}%`).join("\n");
-  const availableFunds = (funds || []).map(f => `${f.fund_code} (${f.name_en})`).join(", ");
+  // Candidate pool: USD funds only (non-USD excluded from new allocations)
+  const availableFunds = usdFunds.map(f => `${f.fund_code} (${f.name_en})`).join(", ");
 
   // ===== DANGER DETECTION (ILAS-specific, category-based) =====
-  const equityFundCount = (funds || []).filter(f => f.category.startsWith("equity")).length;
+  const equityFundCount = usdFunds.filter(f => f.category.startsWith("equity")).length;
   const dangerSignals = detectIlasDangerSignals(metricsText, equityFundCount);
   if (dangerSignals) {
     console.log(`${logPrefix} ${dangerSignals}`);
@@ -389,7 +398,8 @@ ONLY go offense if: No active threats, positive sentiment across regions, AND ma
 
 "No recent news" does NOT mean "safe." It means you lack information — default to CAUTION, not optimism.
 A BLANK news feed = at least 40% defensive allocation.`,
-      `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nRECENT NEWS (48h):\n${newsText || "No recent news"}\n\n${sharedConstraints}`
+      `${profileText}\n\nCURRENT PORTFOLIO:\n${currentPortfolioText}\n\nRECENT NEWS (48h):\n${newsText || "No recent news"}\n\n${sharedConstraints}`,
+      MODEL
     ),
   ]);
 
@@ -411,7 +421,8 @@ DEBATE RULES:
 5. Be decisive. But when in doubt, be defensive. Wrong on the cautious side = miss some gains. Wrong on the aggressive side = lose capital.
 
 Remember: A -30% loss needs +43% to recover. A -50% loss needs +100%. Avoiding the dip IS the strategy.` + trackRecordBlock,
-    `QUANT AGENT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS AGENT PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nReturn JSON: { "agreements": ["..."], "conflicts": [{ "topic": "...", "quantPosition": "...", "newsPosition": "...", "verdict": "quant|news", "reasoning": "..." }], "recommendation": "1-2 sentence recommendation" }`
+    `QUANT AGENT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS AGENT PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nReturn JSON: { "agreements": ["..."], "conflicts": [{ "topic": "...", "quantPosition": "...", "newsPosition": "...", "verdict": "quant|news", "reasoning": "..." }], "recommendation": "1-2 sentence recommendation" }`,
+    MODEL
   );
 
   const debate = parseJSON<IlasDebateResult>(debateRaw);
@@ -433,7 +444,8 @@ YOUR MANDATE:
 ${sharedConstraints}
 
 Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "plain English summary for the team", "summary_zh": "中文摘要", "debate_log": "Quant said X. News said Y. They agreed on Z. Final decision: ..." }` + trackRecordBlock,
-    `QUANT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nDEBATE:\n${JSON.stringify(debate, null, 2)}\n\nFUND METRICS:\n${metricsText}\n\nNEWS SUMMARY:\n${newsText || "No recent news"}`
+    `QUANT PROPOSAL:\n${JSON.stringify(quantProposal, null, 2)}\n\nNEWS PROPOSAL:\n${JSON.stringify(newsProposal, null, 2)}\n\nDEBATE:\n${JSON.stringify(debate, null, 2)}\n\nFUND METRICS:\n${metricsText}\n\nNEWS SUMMARY:\n${newsText || "No recent news"}`,
+    MODEL
   );
 
   const mediator = parseJSON<IlasMediatorResult>(mediatorRaw);
@@ -448,10 +460,12 @@ Return JSON: { "funds": [{ "code": "XXX", "weight": 50 }, ...], "summary_en": "p
   }
 
   // ===== FUND CODE VALIDATION — reject unknown/inactive codes =====
-  const activeFundCodeSet = new Set((funds || []).map(f => f.fund_code));
+  // Validate against USD pool only. The mediator must not propose legacy
+  // non-USD holdings (e.g. Z28 RMB) even if they appear in currentPortfolioText.
+  const activeFundCodeSet = new Set(usdFunds.map(f => f.fund_code));
   const invalidCodes = newPortfolio.filter(p => !activeFundCodeSet.has(p.code)).map(p => p.code);
   if (invalidCodes.length > 0) {
-    return { rebalanced: false, reason: `Mediator proposed unknown/inactive fund codes: ${invalidCodes.join(", ")}` };
+    return { rebalanced: false, reason: `Mediator proposed unknown/non-USD fund codes: ${invalidCodes.join(", ")}` };
   }
 
   // ===== DEDUP — merge duplicate fund codes by summing weights =====
