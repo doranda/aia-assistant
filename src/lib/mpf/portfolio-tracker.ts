@@ -500,10 +500,10 @@ export async function processSettlements(): Promise<{
   const executed: string[] = [];
   const blocked: string[] = [];
 
-  // Optimistic settlement cutoff: rows created on or after this date use the
-  // new pending → executed → settled flow. Legacy rows keep the old
-  // pending → settled (NAV-wait) path.
-  const MIGRATION_CUTOFF = new Date('2026-04-10T00:00:00+08:00');
+  // All switches use the optimistic pending → executed → settled flow.
+  // Legacy NAV-wait path retired — AIA's structural ~5 biz day price lag
+  // makes NAV-gating unreliable. Reconcile-prices cron backfills NAVs.
+  const MIGRATION_CUTOFF = new Date('2000-01-01T00:00:00+08:00');
 
   for (const sw of dueSwitches || []) {
     // ── NEW-ERA: optimistic execution (no NAV needed) ──────────────

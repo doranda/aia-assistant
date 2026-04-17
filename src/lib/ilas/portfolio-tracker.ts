@@ -112,26 +112,26 @@ export async function canSubmitIlasSwitch(
     };
   }
 
-  // Rule 2: 7-day cooldown after last execution
-  const { data: lastExecuted, error: lastError } = await supabase
+  // Rule 2: 7-day cooldown after last settled order
+  const { data: lastSettled, error: lastError } = await supabase
     .from("ilas_portfolio_orders")
     .select("settled_at, settlement_date")
     .eq("portfolio_type", portfolioType)
-    .eq("status", "executed")
+    .eq("status", "settled")
     .order("settled_at", { ascending: false })
     .limit(1)
     .single();
-  if (lastError) console.error("[ilas-tracker] canSubmitIlasSwitch lastExecuted query:", lastError);
+  if (lastError && lastError.code !== "PGRST116") console.error("[ilas-tracker] canSubmitIlasSwitch lastSettled query:", lastError);
 
-  if (lastExecuted?.settlement_date) {
+  if (lastSettled?.settlement_date) {
     const today = new Date().toISOString().split("T")[0];
-    const daysSince = calendarDaysBetween(lastExecuted.settlement_date, today);
+    const daysSince = calendarDaysBetween(lastSettled.settlement_date, today);
     if (daysSince < ILAS_COOLDOWN_DAYS) {
       return {
         allowed: false,
         reason: `Cooldown: last settlement ${daysSince} days ago (need ${ILAS_COOLDOWN_DAYS})`,
         canOverride: true,
-        lastSettlement: lastExecuted.settlement_date,
+        lastSettlement: lastSettled.settlement_date,
       };
     }
   }
@@ -476,10 +476,10 @@ export async function processIlasSettlements(
   const executed: string[] = [];
   const blocked: string[] = [];
 
-  // Optimistic settlement cutoff: rows created on or after this date use the
-  // new pending → executed → settled flow. Legacy rows keep the old
-  // pending → settled (NAV-wait) path.
-  const MIGRATION_CUTOFF = new Date('2026-04-10T00:00:00+08:00');
+  // All orders use the optimistic pending → executed → settled flow.
+  // Legacy NAV-wait path retired — AIA's structural ~5 biz day price lag
+  // makes NAV-gating unreliable. Reconcile-prices cron backfills NAVs.
+  const MIGRATION_CUTOFF = new Date('2000-01-01T00:00:00+08:00');
 
   for (const order of dueOrders || []) {
     // ── NEW-ERA: optimistic execution (no NAV needed) ──────────────

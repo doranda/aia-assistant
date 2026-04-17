@@ -5,7 +5,7 @@ import { INVESTMENT_PROFILES, formatAllocation } from "./constants";
 import { sendDiscordAlert, COLORS } from "@/lib/discord";
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
-const MODEL = "anthropic/claude-opus-4-6";
+const MODEL = "anthropic/claude-sonnet-4.6";
 const PER_CALL_TIMEOUT = 60000; // 60s — debate + mediator calls need more time with defensive-first prompts
 
 export interface PortfolioProposal {
@@ -32,7 +32,7 @@ interface RebalanceResult {
   debate_log?: string;
 }
 
-export async function callGateway(systemPrompt: string, userContent: string): Promise<string> {
+export async function callGateway(systemPrompt: string, userContent: string, model: string = MODEL): Promise<string> {
   const key = process.env.AI_GATEWAY_API_KEY;
   if (!key) throw new Error("No AI_GATEWAY_API_KEY");
 
@@ -47,7 +47,7 @@ export async function callGateway(systemPrompt: string, userContent: string): Pr
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
