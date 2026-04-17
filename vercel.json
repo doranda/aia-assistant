@@ -67,6 +67,10 @@
     {
       "path": "/api/cron/reconcile-prices",
       "schedule": "10 2 * * 1-5"
+    },
+    {
+      "path": "/api/cron/strategy-review",
+      "schedule": "0 10 * * 1"
     }
   ]
 }

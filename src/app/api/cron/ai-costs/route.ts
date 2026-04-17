@@ -83,8 +83,9 @@ export async function GET(request: Request) {
               {
                 name: "Active Models",
                 value: [
-                  "`deepseek/deepseek-chat` — AIA Knowledge Hub",
-                  "`anthropic/claude-sonnet-4.6` — Financial CRM",
+                  "`deepseek/deepseek-chat` — AIA Knowledge Hub chat",
+                  "`anthropic/claude-sonnet-4.6` — MPF + ILAS Rebalancer, Scorer, Briefing",
+                  "`google/gemini-2.5-flash` — News Classifier",
                 ].join("\n"),
                 inline: false,
               },
