@@ -2,9 +2,23 @@
 
 import type { FundCategory } from "./types";
 
+// 5 funds discontinued by AIA June 2023 — Fidelity series + HK/Japan equity.
+// Last real NAV ranges Jun 2023 (FGR/FSG/FCS) → Dec 2023 (HEF) → Aug 2021 (JEF).
+// Screener/heatmap/scoring should exclude; detail page shows DISCONTINUED badge.
+export const DISCONTINUED_FUND_CODES: ReadonlySet<string> = new Set([
+  "AIA-HEF",
+  "AIA-JEF",
+  "AIA-FGR",
+  "AIA-FSG",
+  "AIA-FCS",
+]);
+
+export function isDiscontinuedFund(fund_code: string): boolean {
+  return DISCONTINUED_FUND_CODES.has(fund_code);
+}
+
 // All 20 active AIA MPF funds (Prime Value Choice scheme)
 // Source: https://www.aia.com.hk/en/products/mpf/list (verified 2026-03-25)
-// 5 funds discontinued June 2023: HEF, JEF, FGR, FSG, FCS (Fidelity series + HK/Japan equity)
 export const AIA_FUNDS = [
   { fund_code: "AIA-AEF", name_en: "Asian Equity Fund", name_zh: "亞洲股票基金", category: "equity" as FundCategory, risk_rating: 5 },
   { fund_code: "AIA-EEF", name_en: "European Equity Fund", name_zh: "歐洲股票基金", category: "equity" as FundCategory, risk_rating: 5 },

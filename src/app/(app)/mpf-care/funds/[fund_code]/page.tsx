@@ -5,7 +5,7 @@ import { FundChart } from "@/components/mpf/fund-chart";
 import { RiskMetrics } from "@/components/mpf/risk-metrics";
 import { DisclaimerBanner } from "@/components/mpf/disclaimer-banner";
 import type { MpfFund, MpfPrice, MpfNews, FundMetrics, MetricPeriod } from "@/lib/mpf/types";
-import { FUND_CATEGORY_LABELS, AIA_API_CODE_MAP } from "@/lib/mpf/constants";
+import { FUND_CATEGORY_LABELS, AIA_API_CODE_MAP, isDiscontinuedFund } from "@/lib/mpf/constants";
 import type { FundCategory } from "@/lib/mpf/types";
 
 export default async function FundExplorerPage({
@@ -93,10 +93,18 @@ export default async function FundExplorerPage({
         <h1 className="text-[clamp(1.5rem,3vw,2.25rem)] font-semibold tracking-[-0.03em] text-zinc-50 leading-[1.1]">
           <FundHeading fund={fund} />
         </h1>
-        <div className="flex items-center gap-4 mt-2">
+        <div className="flex items-center gap-4 mt-2 flex-wrap">
           <span className="text-[12px] font-mono text-zinc-300">{fund.fund_code}</span>
           <span className="text-[12px] text-zinc-300">{FUND_CATEGORY_LABELS[fund.category as FundCategory]}</span>
           <span className="text-[12px] text-amber-500" aria-label={`Risk rating ${fund.risk_rating} of 5`}>{riskStars}</span>
+          {isDiscontinuedFund(fund.fund_code) && (
+            <span
+              className="text-[10px] font-mono uppercase tracking-[0.08em] px-2 py-0.5 rounded-sm border border-zinc-700 text-zinc-300"
+              title={latest ? `Last NAV ${latest.date}` : "AIA stopped reporting this fund in 2023"}
+            >
+              Discontinued · data through {latest?.date ?? "2023"}
+            </span>
+          )}
           {(() => {
             const aiaCode = Object.entries(AIA_API_CODE_MAP).find(([, code]) => code === fund.fund_code)?.[0];
             return aiaCode ? (

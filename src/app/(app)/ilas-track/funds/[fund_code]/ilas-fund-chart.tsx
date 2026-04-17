@@ -26,19 +26,16 @@ const PERIODS = [
 export function IlasFundChart({ prices }: { prices: PricePoint[] }) {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["label"]>("3M");
 
+  if (prices.length === 0) {
+    return <p className="text-sm text-zinc-400">No price data available for chart.</p>;
+  }
+
   const days = PERIODS.find((p) => p.label === period)?.days || 90;
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0];
   const filtered = prices.filter((p) => p.date >= cutoff);
-
-  if (filtered.length < 2) {
-    return (
-      <p className="text-sm text-zinc-400">
-        Not enough price data to display a chart.
-      </p>
-    );
-  }
+  const latestDate = prices[prices.length - 1].date;
 
   return (
     <div>
@@ -60,6 +57,12 @@ export function IlasFundChart({ prices }: { prices: PricePoint[] }) {
           </button>
         ))}
       </div>
+      {filtered.length < 2 ? (
+        <div className="h-[300px] flex flex-col items-center justify-center gap-2 border border-dashed border-zinc-800 rounded-md">
+          <p className="text-sm text-zinc-300">Not enough data in the last {period}.</p>
+          <p className="text-[11px] font-mono text-zinc-400">Latest price: {latestDate}</p>
+        </div>
+      ) : (
       <div className="overflow-x-auto">
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={filtered}>
@@ -93,6 +96,7 @@ export function IlasFundChart({ prices }: { prices: PricePoint[] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      )}
     </div>
   );
 }

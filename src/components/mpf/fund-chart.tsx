@@ -26,6 +26,7 @@ export function FundChart({ prices }: { prices: PricePoint[] }) {
   const days = PERIODS.find((p) => p.label === period)?.days || 30;
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
   const filtered = prices.filter((p) => p.date >= cutoff);
+  const latestDate = prices[prices.length - 1].date;
 
   return (
     <div>
@@ -47,6 +48,12 @@ export function FundChart({ prices }: { prices: PricePoint[] }) {
           </button>
         ))}
       </div>
+      {filtered.length < 2 ? (
+        <div className="h-[300px] flex flex-col items-center justify-center gap-2 border border-dashed border-zinc-800 rounded-md">
+          <p className="text-sm text-zinc-300">No data in the last {period}.</p>
+          <p className="text-[11px] font-mono text-zinc-400">Latest price: {latestDate}</p>
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={filtered}>
           <XAxis
@@ -73,6 +80,7 @@ export function FundChart({ prices }: { prices: PricePoint[] }) {
           />
         </LineChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }
